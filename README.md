@@ -52,14 +52,14 @@ A comprehensive center for tailoring the user experience:
 
 Our chosen technology stack is designed for scalability, cross-platform compatibility, and an optimized, media-rich experience:
 
-| Component | Primary Technology | Alternatives / Local Dev |
-| :--- | :--- | :--- |
-| **Web Frontend** | Next.js | |
-| **Mobile Frontend** | Flutter | Expo (Pending research) |
-| **Backend API** | Python (FastAPI) | Node.js |
-| **Database** | PostgreSQL | MongoDB |
-| **News Data Source** | NewsAPI | Custom Web Scraping |
-| **Asset Storage (Images & Audio)** | AWS S3 | MinIO (Local development) |
-| **Text-to-Speech (TTS)** | AWS Polly | Qwen-3 TTS |
+| Component                | Primary Technology      | Alternatives / Tradeoffs                                                            |
+| :----------------------- | :---------------------- | :---------------------------------------------------------------------------------- |
+| **Web Frontend**         | Next.js                 |                                                                                     |
+| **Mobile Frontend**      | Flutter                 | Expo (Pending research)                                                             |
+| **Backend API**          | Python (FastAPI)        |                                                                                     |
+| **Database**             | PostgreSQL (Relational) | MongoDB (NoSQL) - Chosen for flexibility with NewsAPI data if scaling horizontally. |
+| **News Data Source**     | NewsAPI                 | Custom Web Scraping                                                                 |
+| **Asset Storage**        | AWS S3                  | MinIO (Local development)                                                           |
+| **Text-to-Speech (TTS)** | Qwen-3 (Hosted)         | Scalable, high-quality local/hosted model.                                          |
 
 
