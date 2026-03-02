@@ -20,7 +20,7 @@ The backend must serve the enriched content required for the deep-dive experienc
 
 ## 2. Frontend Implementation (Next.js / Flutter)
 
-- **`ContinuousAudioPlayer`**: Integrated player HUD for deep-dive summaries. See **[Audio Player UI](./audio-player-ui.md)** for detailed control specifications (Rewind, Forward, Speed).
+- **`ContinuousAudioPlayer`**: Integrated player HUD for deep-dive summaries. See **[Audio Player UI](../features/audio-player-ui.md)** for detailed control specifications (Rewind, Forward, Speed).
 - **`ContentRenderer`**: Reader view with progress indicators.
 - **`NavigationDock`**: Floating controls with "Next in Queue".
 
@@ -53,7 +53,7 @@ When the user selects **"Read Related News"** from the Transition Overlay:
 Once the detailed summary audio finishes, the application follows this automated logic:
 
 ### 3.1 Scenario A: More articles in current briefing
-- **Action**: The UI pops back to the [Top News Screen](./top-news-screen.md) or remains in a "minimal reader" mode.
+- **Action**: The UI pops back to the [Top News Screen](../features/top-news-screen.md) or remains in a "minimal reader" mode.
 - **Playback**: Continues reading the **headline** of the next article in the current queue automatically.
 
 ### 3.2 Scenario B: Last article in current briefing

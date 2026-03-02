@@ -5,7 +5,7 @@ The Settings page is the central hub for tailoring the user experience, managing
 ## 1. Profile & Authentication
 - **Authentication**: Sign In/Sign Up pages with JWT-based sessions.
 - **Profile Management**: Update username, email, and password.
-- **Personalized Bookmarks**: A dedicated view to manage and revisit saved articles. (See [db-schema.md](./db-schema.md#bookmarks)).
+- **Personalized Bookmarks**: A dedicated view to manage and revisit saved articles. (See [db-schema.md](../architecture/db-schema.md#bookmarks)).
 
 ---
 
@@ -13,7 +13,7 @@ The Settings page is the central hub for tailoring the user experience, managing
 These settings directly influence how news is filtered and played back across the app.
 
 For a deep dive into the technical implementation of genres, volume, autoplay, and audio tuning, see:
-**[Content & Playback Preferences Detailed Plan](./content-playback-preferences.md)**
+**[Content & Playback Preferences Detailed Plan](../features/content-playback-preferences.md)**
 
 ---
 
@@ -25,7 +25,7 @@ Stay updated with the latest news even when you're not using the app.
 - **Notification Opt-out**: Simple global toggle to turn off all alerts.
 
 For technical details on FCM and Email integration, see:
-**[Notification System Detailed Plan](./notifications.md)**
+**[Notification System Detailed Plan](../features/notifications.md)**
 
 ---
 
@@ -42,7 +42,7 @@ For technical details on FCM and Email integration, see:
 Manage your plan status and access premium features.
 
 For a detailed implementation plan covering RevenueCat integration and feature unlocking (HD images, unlimited bookmarks, etc.), see:
-**[Subscription & Premium Detailed Plan](./subscription-premium.md)**
+**[Subscription & Premium Detailed Plan](../features/subscription-premium.md)**
 
 ---
 

@@ -90,9 +90,9 @@ When a user requests `GET /api/v1/news/briefing`:
 
 ## 5. Related Documentation
 
-- **[Audio Player Controls](./audio-player-ui.md)**
-- **[Database Schema Reference](./db-schema.md)**
-- **[Audio & HLS Details](./audio-processing.md)**
-- **[Authentication Flow](./auth-profile.md)**
-- **[Subscription Logic](./subscription-premium.md)**
-- **[API Endpoints Index](./endpoints/news.md)**
+- **[Audio Player Controls](../features/audio-player-ui.md)**
+- **[Database Schema Reference](../architecture/db-schema.md)**
+- **[Audio & HLS Details](../architecture/audio-processing.md)**
+- **[Authentication Flow](../features/auth-profile.md)**
+- **[Subscription Logic](../features/subscription-premium.md)**
+- **[API Endpoints Index](../api/endpoints/news.md)**

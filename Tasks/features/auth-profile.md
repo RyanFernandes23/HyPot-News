@@ -43,7 +43,7 @@ The backend acts as a consumer of Clerk's authentication tokens.
 ---
 
 ## 4. User Data Schema
-Refer to [db-schema.md](./db-schema.md#users) for the PostgreSQL structure.
+Refer to [db-schema.md](../architecture/db-schema.md#users) for the PostgreSQL structure.
 
 ### Profile Mapping:
 | Field        | Source                                         |

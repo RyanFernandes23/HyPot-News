@@ -12,7 +12,7 @@ The backend is responsible for aggregating news, processing it through the Qwen-
 - **HLS Management**: Manages and serves the `.m3u8` playlists and `.ts` audio segments stored in S3/MinIO.
 
 ### Database Reference:
-See [db-schema.md](./db-schema.md) for table definitions (`news_articles`, `users`, `bookmarks`).
+See [db-schema.md](../architecture/db-schema.md) for table definitions (`news_articles`, `users`, `bookmarks`).
 
 ---
 
@@ -22,7 +22,7 @@ The "Top News" screen provides a high-quality, hands-free slideshow experience.
 
 ### Key Components:
 - **`BriefingSlider`**: A full-screen carousel module.
-- **`HLSPlayer`**: The core audio engine. It works in tandem with the **[PlaybackHUD](./audio-player-ui.md)** to provide play/pause, seek, and speed controls.
+- **`HLSPlayer`**: The core audio engine. It works in tandem with the **[PlaybackHUD](../features/audio-player-ui.md)** to provide play/pause, seek, and speed controls.
 - **`PlaybackHUD`**: User interface overlay with dynamic progress bars.
 
 ### UX Logic:

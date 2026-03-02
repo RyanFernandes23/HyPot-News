@@ -32,7 +32,7 @@ We recommend **RevenueCat** for cross-platform entitlement management.
 
 ## 3. Database Schema Updates
 
-Refer to [db-schema.md](./db-schema.md) for details.
+Refer to [db-schema.md](../architecture/db-schema.md) for details.
 
 ### `users` table additions:
 - `subscription_tier`: `VARCHAR(20)` (Default: 'free', values: 'free', 'pro')

@@ -39,7 +39,7 @@ Final assets are stored in a hierarchical structure to support multiple voice pr
 - **High-Quality Speed Adjustment**: To avoid the "choppy" effect of browser-based time-stretching, the **Qwen-3 TTS** or **FFmpeg (with `atempo` filter)** generates separate audio files for each supported speed during the sync phase.
 
 ### Database Mapping
-We store the playlist entry points in the `news_articles` table. Refer to [db-schema.md](./db-schema.md) for full definitions.
+We store the playlist entry points in the `news_articles` table. Refer to [db-schema.md](../architecture/db-schema.md) for full definitions.
 
 ```sql
 -- Key fields for audio playback
