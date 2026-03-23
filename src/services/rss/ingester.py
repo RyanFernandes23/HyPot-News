@@ -25,6 +25,20 @@ def map_entry_to_article(entry: Dict[str, Any]) -> Dict[str, Any]:
     """
     Maps a raw feedparser entry dict to the DB schema for news_articles.
     """
+    # Extract image URL
+    image_url = ""
+    if "media_thumbnail" in entry and entry["media_thumbnail"]:
+        image_url = entry["media_thumbnail"][0].get("url", "")
+    elif "media_content" in entry and entry["media_content"]:
+        image_url = entry["media_content"][0].get("url", "")
+        
+    # Extract published date
+    import time
+    published_at = entry.get("published", "")
+    if "published_parsed" in entry and entry["published_parsed"]:
+        # Convert to ISO format for Postgres/Supabase
+        published_at = time.strftime('%Y-%m-%dT%H:%M:%SZ', entry["published_parsed"])
+    
     return {
         "external_id": build_external_id(entry),
         "source_name": entry.get("descriptor_source", "Unknown"),
@@ -33,7 +47,9 @@ def map_entry_to_article(entry: Dict[str, Any]) -> Dict[str, Any]:
         "summarized_content": entry.get("summary", ""),
         "content": "",
         "source_url": entry.get("link", ""),
+        "url_to_image": image_url,
         "category": entry.get("descriptor_category", "Uncategorized"),
+        "published_at": published_at,
         "raw_data": entry,
     }
 

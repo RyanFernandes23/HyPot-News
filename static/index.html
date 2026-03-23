@@ -1,0 +1,741 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HyPot-News | Premium Audio Experience</title>
+    <!-- Google Fonts: Inter -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <!-- HLS.js Library -->
+    <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+    <style>
+        :root {
+            --bg-color: #0f172a;
+            --sidebar-bg: rgba(30, 41, 59, 0.7);
+            --card-bg: rgba(30, 41, 59, 0.5);
+            --accent-color: #38bdf8;
+            --accent-glow: rgba(56, 189, 248, 0.3);
+            --text-primary: #f8fafc;
+            --text-secondary: #94a3b8;
+            --glass-border: rgba(255, 255, 255, 0.1);
+            --transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Inter', sans-serif;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-primary);
+            overflow: hidden;
+            height: 100vh;
+            display: flex;
+        }
+
+        /* Sidebar Styling */
+        .sidebar {
+            width: 280px;
+            background: var(--sidebar-bg);
+            backdrop-filter: blur(12px);
+            border-right: 1px solid var(--glass-border);
+            padding: 2rem 1.5rem;
+            display: flex;
+            flex-direction: column;
+            gap: 2rem;
+            z-index: 10;
+        }
+
+        .logo {
+            font-size: 1.5rem;
+            font-weight: 700;
+            letter-spacing: -0.025em;
+            background: linear-gradient(135deg, #38bdf8, #818cf8);
+            background-clip: text;
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 1rem;
+        }
+
+        .nav-list {
+            list-style: none;
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+
+        .nav-item {
+            padding: 0.75rem 1rem;
+            border-radius: 0.75rem;
+            cursor: pointer;
+            color: var(--text-secondary);
+            font-weight: 500;
+            transition: var(--transition);
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+
+        .nav-item:hover, .nav-item.active {
+            background: rgba(56, 189, 248, 0.1);
+            color: var(--accent-color);
+        }
+
+        .nav-item.active {
+            box-shadow: 0 0 20px var(--accent-glow);
+            border: 1px solid rgba(56, 189, 248, 0.2);
+        }
+
+        /* Main Content Styling */
+        .main-content {
+            flex: 1;
+            padding: 2rem;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 2rem;
+            padding-bottom: 120px; /* Space for player */
+        }
+
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        h1 {
+            font-size: 2rem;
+            font-weight: 700;
+        }
+
+        .news-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+            gap: 1.5rem;
+        }
+
+        .news-card {
+            background: var(--card-bg);
+            backdrop-filter: blur(8px);
+            border: 1px solid var(--glass-border);
+            border-radius: 1.25rem;
+            transition: var(--transition);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            min-height: 480px; /* Increased for media */
+        }
+
+        .media-container {
+            width: 100%;
+            height: 200px;
+            background: rgba(0, 0, 0, 0.2);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .media-container img, .media-container video {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            transition: var(--transition);
+        }
+
+        .news-card:hover .media-container img,
+        .news-card:hover .media-container video {
+            transform: scale(1.05);
+        }
+
+        .card-content {
+            padding: 1.5rem;
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+            flex: 1;
+        }
+
+        .headline-section {
+            cursor: pointer;
+            padding-bottom: 0.5rem;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+            transition: var(--transition);
+        }
+
+        .headline-section:hover {
+            color: var(--accent-color);
+        }
+
+        .summary-section {
+            cursor: pointer;
+            flex: 1;
+            padding: 0.5rem 0;
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+            transition: var(--transition);
+        }
+
+        .summary-section:hover {
+            background: rgba(56, 189, 248, 0.03);
+            border-radius: 0.5rem;
+        }
+
+        .news-card h3 {
+            font-size: 1.125rem;
+            line-height: 1.4;
+            color: inherit;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .news-card p {
+            font-size: 0.875rem;
+            color: var(--text-secondary);
+            line-height: 1.6;
+            overflow-y: auto;
+            max-height: 150px;
+            padding-right: 4px;
+        }
+
+        .play-indicator {
+            width: 18px;
+            height: 18px;
+            opacity: 0.5;
+            flex-shrink: 0;
+        }
+
+        .headline-section:hover .play-indicator,
+        .summary-section:hover .play-indicator {
+            opacity: 1;
+            color: var(--accent-color);
+        }
+
+        .category-tag {
+            position: absolute;
+            top: 1rem;
+            right: 1rem;
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            color: var(--text-primary);
+            background: rgba(15, 23, 42, 0.6);
+            backdrop-filter: blur(4px);
+            padding: 0.25rem 0.75rem;
+            border-radius: 100px;
+            border: 1px solid var(--glass-border);
+            z-index: 5;
+        }
+
+        .news-card .meta {
+            margin-top: auto;
+            padding-top: 1rem;
+            border-top: 1px solid var(--glass-border);
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        /* Player Bar Styling */
+        .player-bar {
+            position: fixed;
+            bottom: 1.5rem;
+            left: 50%;
+            transform: translateX(-50%);
+            width: calc(100% - 320px);
+            max-width: 900px;
+            background: rgba(15, 23, 42, 0.8);
+            backdrop-filter: blur(16px);
+            border: 1px solid var(--glass-border);
+            border-radius: 1.5rem;
+            padding: 1rem 2rem;
+            display: flex;
+            align-items: center;
+            gap: 2rem;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4);
+            z-index: 100;
+            transition: var(--transition);
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        .player-bar.active {
+            opacity: 1;
+            pointer-events: all;
+            bottom: 2rem;
+        }
+
+        .player-info {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            gap: 0.25rem;
+            min-width: 0;
+        }
+
+        .player-title {
+            font-size: 0.9375rem;
+            font-weight: 600;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .player-subtitle {
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+        }
+
+        .player-controls {
+            display: flex;
+            align-items: center;
+            gap: 1.5rem;
+        }
+
+        .play-btn {
+            width: 44px;
+            height: 44px;
+            border-radius: 50%;
+            background: var(--accent-color);
+            border: none;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: var(--transition);
+        }
+
+        .play-btn:hover {
+            transform: scale(1.1);
+            box-shadow: 0 0 20px var(--accent-glow);
+        }
+
+        .progress-container {
+            flex: 2;
+            height: 4px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 2px;
+            position: relative;
+            cursor: pointer;
+        }
+
+        .progress-bar {
+            height: 100%;
+            background: var(--accent-color);
+            border-radius: 2px;
+            width: 0%;
+            position: relative;
+        }
+
+        .progress-bar::after {
+            content: '';
+            position: absolute;
+            right: -6px;
+            top: -4px;
+            width: 12px;
+            height: 12px;
+            background: var(--text-primary);
+            border-radius: 50%;
+            opacity: 0;
+            transition: var(--transition);
+        }
+
+        .progress-container:hover .progress-bar::after {
+            opacity: 1;
+        }
+
+        /* Loading Spinner */
+        .loader {
+            width: 48px;
+            height: 48px;
+            border: 5px solid #FFF;
+            border-bottom-color: var(--accent-color);
+            border-radius: 50%;
+            display: inline-block;
+            box-sizing: border-box;
+            animation: rotation 1s linear infinite;
+            margin: 2rem auto;
+        }
+
+        @keyframes rotation {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: var(--bg-color);
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: var(--glass-border);
+            border-radius: 10px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: var(--text-secondary);
+        }
+
+        /* Admin Section */
+        .admin-section {
+            margin-top: auto;
+            border-top: 1px solid var(--glass-border);
+            padding-top: 1.5rem;
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+        }
+
+        .admin-title {
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            color: var(--text-secondary);
+            letter-spacing: 0.05em;
+        }
+
+        .cleanup-btn {
+            background: rgba(239, 68, 68, 0.1);
+            color: #ef4444;
+            border: 1px solid rgba(239, 68, 68, 0.2);
+            padding: 0.75rem 1rem;
+            border-radius: 0.75rem;
+            font-size: 0.875rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: var(--transition);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+        }
+
+        .cleanup-btn:hover {
+            background: #ef4444;
+            color: white;
+            box-shadow: 0 0 15px rgba(239, 68, 68, 0.3);
+        }
+
+        .cleanup-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+    </style>
+</head>
+<body>
+    <aside class="sidebar">
+        <div class="logo">HyPot-News</div>
+        <nav>
+            <ul class="nav-list" id="categoryList">
+                <li class="nav-item active" data-category="International">🌍 International</li>
+                <li class="nav-item" data-category="Tech">🚀 Tech</li>
+                <li class="nav-item" data-category="Finance">💰 Finance</li>
+                <li class="nav-item" data-category="Sports">⚽ Sports</li>
+                <li class="nav-item" data-category="Entertainment">🎬 Entertainment</li>
+                <li class="nav-item" data-category="Health">🏥 Health</li>
+            </ul>
+        </nav>
+
+        <div class="admin-section">
+            <div class="admin-title">Developer Tools</div>
+            <button class="cleanup-btn" id="cleanupBtn">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <polyline points="3 6 5 6 21 6"></polyline>
+                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                </svg>
+                Cleanup Dev Data
+            </button>
+        </div>
+    </aside>
+
+    <main class="main-content">
+        <header>
+            <h1 id="currentCategoryTitle">International News</h1>
+        </header>
+
+        <div id="news-container" class="news-grid">
+            <!-- News cards will be injected here -->
+        </div>
+        <div id="loader" style="display: none; text-align: center; width: 100%;">
+            <span class="loader"></span>
+        </div>
+    </main>
+
+    <div class="player-bar" id="playerBar">
+        <div class="player-controls">
+            <button class="play-btn" id="playPauseBtn">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="white" id="playIcon">
+                    <path d="M8 5v14l11-7z"/>
+                </svg>
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="white" id="pauseIcon" style="display: none;">
+                    <path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/>
+                </svg>
+            </button>
+        </div>
+        <div class="player-info">
+            <div class="player-title" id="nowPlayingTitle">News Headline</div>
+            <div class="player-subtitle" id="nowPlayingType">Playing Summary</div>
+        </div>
+        <div class="progress-container" id="progressBarContainer">
+            <div class="progress-bar" id="progressBar"></div>
+        </div>
+        <audio id="audioElement" style="display: none;"></audio>
+    </div>
+
+    <script>
+        const newsContainer = document.getElementById('news-container');
+        const loader = document.getElementById('loader');
+        const categoryList = document.getElementById('categoryList');
+        const currentCategoryTitle = document.getElementById('currentCategoryTitle');
+        const playerBar = document.getElementById('playerBar');
+        const audioElement = document.getElementById('audioElement');
+        const playPauseBtn = document.getElementById('playPauseBtn');
+        const playIcon = document.getElementById('playIcon');
+        const pauseIcon = document.getElementById('pauseIcon');
+        const progressBar = document.getElementById('progressBar');
+        const progressBarContainer = document.getElementById('progressBarContainer');
+        const nowPlayingTitle = document.getElementById('nowPlayingTitle');
+        const nowPlayingType = document.getElementById('nowPlayingType');
+
+        let currentCategory = 'International';
+        let hls = null;
+
+        // Initialize App
+        function init() {
+            fetchNews(currentCategory);
+            setupEventListeners();
+        }
+
+        async function fetchNews(category) {
+            newsContainer.innerHTML = '';
+            loader.style.display = 'block';
+            currentCategoryTitle.innerText = `${category} News`;
+
+            try {
+                const response = await fetch(`/api/v1/news?category=${category}&limit=20`);
+                const data = await response.json();
+                
+                loader.style.display = 'none';
+                
+                if (data.articles && data.articles.length > 0) {
+                    data.articles.forEach(article => {
+                        const card = createNewsCard(article);
+                        newsContainer.appendChild(card);
+                    });
+                } else {
+                    newsContainer.innerHTML = `<p style="grid-column: 1/-1; text-align: center; color: var(--text-secondary);">No articles found for this category.</p>`;
+                }
+            } catch (error) {
+                console.error('Error fetching news:', error);
+                loader.style.display = 'none';
+                newsContainer.innerHTML = `<p style="grid-column: 1/-1; text-align: center; color: #ef4444;">Failed to load news. Please try again later.</p>`;
+            }
+        }
+
+        function createNewsCard(article) {
+            const card = document.createElement('div');
+            card.className = 'news-card';
+            
+            const publishedAt = new Date(article.published_at).toLocaleDateString();
+            const hasHeadlineAudio = !!article.headline_hls_base_url;
+            const hasSummaryAudio = !!article.summary_hls_base_url;
+            
+            // Media detection
+            let mediaHtml = '';
+            const mediaUrl = article.url_to_image || article.url_to_hd_image;
+            if (mediaUrl) {
+                const isVideo = mediaUrl.match(/\.(mp4|webm|ogg|mov)$/) || mediaUrl.includes('youtube.com') || mediaUrl.includes('vimeo.com');
+                if (isVideo && !mediaUrl.includes('youtube.com')) {
+                    mediaHtml = `
+                        <div class="media-container">
+                            <video src="${mediaUrl}" muted loop onmouseover="this.play()" onmouseout="this.pause()"></video>
+                        </div>`;
+                } else {
+                    mediaHtml = `
+                        <div class="media-container">
+                            <img src="${mediaUrl}" alt="${article.headline}" onerror="this.parentElement.style.display='none'">
+                        </div>`;
+                }
+            }
+
+            card.innerHTML = `
+                ${mediaHtml}
+                <div class="category-tag">${article.category}</div>
+                <div class="card-content">
+                    <div class="headline-section" id="headline-${article.id}">
+                        <h3>
+                            ${hasHeadlineAudio ? `
+                            <svg class="play-indicator" viewBox="0 0 24 24" fill="currentColor">
+                                <path d="M8 5v14l11-7z"/>
+                            </svg>` : ''}
+                            ${article.headline}
+                        </h3>
+                    </div>
+                    <div class="summary-section" id="summary-${article.id}">
+                        <p>
+                            ${hasSummaryAudio ? `
+                            <svg class="play-indicator" viewBox="0 0 24 24" fill="currentColor" style="float: left; margin: 4px 8px 0 0;">
+                                <path d="M8 5v14l11-7z"/>
+                            </svg>` : ''}
+                            ${article.summarized_content || 'No summary available.'}
+                        </p>
+                    </div>
+                    <div class="meta">
+                        <span>${article.source_name || 'HyPot News'}</span>
+                        <span>${publishedAt}</span>
+                    </div>
+                </div>
+            `;
+            
+            // Listen to headline click
+            const headlineEl = card.querySelector(`#headline-${article.id}`);
+            if (headlineEl) {
+                headlineEl.onclick = (e) => {
+                    e.stopPropagation();
+                    if (hasHeadlineAudio) {
+                        playAudio(article.headline_hls_base_url, article.headline, 'Headline');
+                    }
+                };
+            }
+
+            // Listen to summary click
+            const summaryEl = card.querySelector(`#summary-${article.id}`);
+            if (summaryEl) {
+                summaryEl.onclick = (e) => {
+                    e.stopPropagation();
+                    if (hasSummaryAudio) {
+                        playAudio(article.summary_hls_base_url, article.headline, 'Summary');
+                    }
+                };
+            }
+            
+            return card;
+        }
+
+        function playAudio(url, title, type) {
+            console.log('Playing audio:', url);
+            nowPlayingTitle.innerText = title;
+            nowPlayingType.innerText = `Playing ${type}`;
+            playerBar.classList.add('active');
+
+            if (hls) {
+                hls.destroy();
+            }
+
+            if (Hls.isSupported()) {
+                hls = new Hls();
+                hls.loadSource(url);
+                hls.attachMedia(audioElement);
+                hls.on(Hls.Events.MANIFEST_PARSED, function() {
+                    audioElement.play();
+                    updatePlayBtn(true);
+                });
+            } else if (audioElement.canPlayType('application/vnd.apple.mpegurl')) {
+                // Native HLS support (Safari)
+                audioElement.src = url;
+                audioElement.addEventListener('loadedmetadata', function() {
+                    audioElement.play();
+                    updatePlayBtn(true);
+                });
+            }
+        }
+
+        function setupEventListeners() {
+            // Category switches
+            categoryList.querySelectorAll('.nav-item').forEach(item => {
+                item.onclick = () => {
+                    categoryList.querySelector('.active').classList.remove('active');
+                    item.classList.add('active');
+                    currentCategory = item.dataset.category;
+                    fetchNews(currentCategory);
+                };
+            });
+
+            // Play/Pause
+            playPauseBtn.onclick = () => {
+                if (audioElement.paused) {
+                    audioElement.play();
+                    updatePlayBtn(true);
+                } else {
+                    audioElement.pause();
+                    updatePlayBtn(false);
+                }
+            };
+
+            // Progress Update
+            audioElement.ontimeupdate = () => {
+                const progress = (audioElement.currentTime / audioElement.duration) * 100;
+                progressBar.style.width = `${progress}%`;
+            };
+
+            // Seek
+            progressBarContainer.onclick = (e) => {
+                const rect = progressBarContainer.getBoundingClientRect();
+                const pos = (e.clientX - rect.left) / rect.width;
+                audioElement.currentTime = pos * audioElement.duration;
+            };
+
+            // Cleanup Dev Data
+            const cleanupBtn = document.getElementById('cleanupBtn');
+            cleanupBtn.onclick = async () => {
+                const confirmed1 = confirm("⚠️ DANGER ZONE: This will permanently delete ALL news articles, S3 objects, and local temporary files. Are you absolutely sure?");
+                if (!confirmed1) return;
+
+                const confirmed2 = confirm("FINAL CONFIRMATION: This action is irreversible. Proceed?");
+                if (!confirmed2) return;
+
+                try {
+                    cleanupBtn.disabled = true;
+                    cleanupBtn.innerText = 'Cleaning...';
+                    
+                    const response = await fetch('/api/v1/admin/dev-cleanup', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' }
+                    });
+
+                    const data = await response.json();
+
+                    if (response.ok) {
+                        alert(`Success! Cleanup completed.\n\nSupabase rows: ${data.details.supabase}\nS3 Objects: ${data.details.s3}\nLocal Temp: ${data.details.local ? 'Cleared' : 'Skipped'}`);
+                        fetchNews(currentCategory);
+                    } else {
+                        alert(`Cleanup Failed: ${data.detail || 'Unknown error'}`);
+                    }
+                } catch (error) {
+                    console.error('Cleanup error:', error);
+                    alert(`An error occurred: ${error.message}`);
+                } finally {
+                    cleanupBtn.disabled = false;
+                    cleanupBtn.innerHTML = `
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <polyline points="3 6 5 6 21 6"></polyline>
+                            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                        </svg>
+                        Cleanup Dev Data`;
+                }
+            };
+        }
+
+        function updatePlayBtn(isPlaying) {
+            if (isPlaying) {
+                playIcon.style.display = 'none';
+                pauseIcon.style.display = 'block';
+            } else {
+                playIcon.style.display = 'block';
+                pauseIcon.style.display = 'none';
+            }
+        }
+
+        init();
+    </script>
+</body>
+</html>

@@ -63,3 +63,9 @@ Our chosen technology stack is designed for scalability, cross-platform compatib
 | **Text-to-Speech (TTS)** | Qwen-3 (Hosted)         | Scalable, high-quality local/hosted model.                                          |
 
 
+-------------------------------------------------------------------
+worker -> uv run -m src.worker
+
+tts -> uv run modal deploy qwen-3-tts-modal.py
+
+fastapi -> uvicorn src.main:app --reload
