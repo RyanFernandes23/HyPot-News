@@ -25,53 +25,69 @@ async def proxy_audio_file(
 ):
     object_name = f"articles/{article_id}/{audio_type}/{filename}"
     ext = filename.rsplit(".", 1)[-1].lower()
-    content_type = CONTENT_TYPES.get(ext, "application/octet-stream")
 
-    # Run blocking S3 call in thread pool so it doesn't block the event loop
-    loop = asyncio.get_event_loop()
-    try:
-        s3_resp = await loop.run_in_executor(
-            _executor,
-            lambda: s3_service.get_file_stream(object_name)
+    if ext == "ts":
+        # Redirect .ts segments to a presigned URL for better performance
+        presigned_url = s3_service.generate_presigned_url(object_name, expires_in=300)
+        if not presigned_url:
+            raise HTTPException(status_code=404, detail="Audio segment not found")
+        
+        return Response(
+            status_code=302,
+            headers={
+                "Location": presigned_url,
+                "Cache-Control": "max-age=300",
+                "Access-Control-Allow-Origin": "*",
+            }
         )
-    except Exception as e:
-        logger.error(f"S3 fetch failed for {object_name}: {e}")
-        raise HTTPException(status_code=404, detail="Audio file not found")
 
-    content_length = s3_resp.get("ContentLength")
-    etag = s3_resp.get("ETag", "").strip('"')
-
-    # ETag-based 304 — player skips re-download if it already has this version
-    if etag and request.headers.get("If-None-Match") == etag:
-        return Response(status_code=304)
-
-    headers = {
-        "Cache-Control": "no-cache" if ext == "m3u8" else "max-age=3600",
-        "Access-Control-Allow-Origin": "*",
-        "Accept-Ranges": "bytes",
-    }
-    if content_length:
-        headers["Content-Length"] = str(content_length)
-    if etag:
-        headers["ETag"] = etag
-
-    body = s3_resp["Body"]
-
-    async def _stream():
+    # Proxy .m3u8 playlists through FastAPI
+    if ext == "m3u8":
+        content_type = CONTENT_TYPES.get(ext, "application/octet-stream")
+        loop = asyncio.get_event_loop()
         try:
-            # Run each blocking read in executor to stay non-blocking
-            while True:
-                chunk = await loop.run_in_executor(_executor, lambda: body.read(CHUNK_SIZE))
-                if not chunk:
-                    break
-                yield chunk
+            s3_resp = await loop.run_in_executor(
+                _executor,
+                lambda: s3_service.get_file_stream(object_name)
+            )
         except Exception as e:
-            logger.error(f"Stream interrupted for {object_name}: {e}")
-        finally:
-            body.close()
+            logger.error(f"S3 fetch failed for playlist {object_name}: {e}")
+            raise HTTPException(status_code=404, detail="Playlist not found")
 
-    return StreamingResponse(
-        _stream(),
-        media_type=content_type,
-        headers=headers,
-    )
+        etag = s3_resp.get("ETag", "").strip('"')
+        if etag and request.headers.get("If-None-Match") == etag:
+            return Response(status_code=304)
+
+        headers = {
+            "Cache-Control": "no-cache",
+            "Access-Control-Allow-Origin": "*",
+            "Accept-Ranges": "bytes",
+        }
+        content_length = s3_resp.get("ContentLength")
+        if content_length:
+            headers["Content-Length"] = str(content_length)
+        if etag:
+            headers["ETag"] = etag
+
+        body = s3_resp["Body"]
+
+        async def _stream():
+            try:
+                while True:
+                    chunk = await loop.run_in_executor(_executor, lambda: body.read(CHUNK_SIZE))
+                    if not chunk:
+                        break
+                    yield chunk
+            except Exception as e:
+                logger.error(f"Stream interrupted for {object_name}: {e}")
+            finally:
+                body.close()
+
+        return StreamingResponse(
+            _stream(),
+            media_type=content_type,
+            headers=headers,
+        )
+
+    # Fallback/Other extensions
+    raise HTTPException(status_code=400, detail="Unsupported file format")

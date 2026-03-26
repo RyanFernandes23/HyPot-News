@@ -5,13 +5,14 @@ from fastapi import APIRouter, HTTPException, Depends
 from src.core.config import settings
 from src.db.supabase import supabase_service
 from src.services.storage.s3 import s3_service
+from src.api.deps import get_current_user
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["Admin"])
 
 @router.post("/admin/dev-cleanup")
-async def dev_cleanup():
+async def dev_cleanup(user: dict = Depends(get_current_user)):
     """
     Cleans up all development data: 
     - Empties news_articles table in Supabase

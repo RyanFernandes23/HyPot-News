@@ -60,6 +60,21 @@ class S3Service:
             logger.error(f"S3 fetch failed: {e}")
             raise
 
+    def generate_presigned_url(self, object_name: str, expires_in: int = 300) -> str:
+        """
+        Generates a presigned URL for a specific object.
+        """
+        try:
+            url = self.s3_client.generate_presigned_url(
+                "get_object",
+                Params={"Bucket": self.bucket_name, "Key": object_name},
+                ExpiresIn=expires_in,
+            )
+            return url
+        except ClientError as e:
+            logger.error(f"Failed to generate presigned URL for {object_name}: {e}")
+            return ""
+
     def delete_all_objects(self) -> int:
         """
         Deletes all objects in the bucket. Returns the count of deleted objects.

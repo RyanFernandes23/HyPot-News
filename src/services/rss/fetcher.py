@@ -68,18 +68,18 @@ async def fetch_all_feeds() -> List[Dict[str, Any]]:
         
     all_entries.sort(key=get_sort_key, reverse=True)
     
-    # Keep only 20 per category
+    # Keep only 5 per category
     filtered_entries = []
     category_counts = {}
     for entry in all_entries:
         cat = entry["descriptor_category"]
         count = category_counts.get(cat, 0)
-        if count < 20:
+        if count < 5:
             filtered_entries.append(entry)
             category_counts[cat] = count + 1
 
     all_entries = filtered_entries
-    logger.info(f"Total RSS items fetched (after limiting 20 per category): {len(all_entries)}")
+    logger.info(f"Total RSS items fetched (after limiting 5 per category): {len(all_entries)}")
     
     # Write to debug file
     try:

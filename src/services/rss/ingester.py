@@ -53,6 +53,36 @@ def map_entry_to_article(entry: Dict[str, Any]) -> Dict[str, Any]:
         "raw_data": entry,
     }
 
+def prune_articles_by_category(category: str, limit: int = 5):
+    """
+    Deletes articles in the given category that are not in the top 'limit'
+    when sorted by published_at DESC.
+    """
+    try:
+        # Keep only the latest 5 for each category
+        response = supabase_service.table("news_articles") \
+            .select("id") \
+            .eq("category", category) \
+            .order("published_at", {"ascending": False}) \
+            .limit(5) \
+            .execute()
+        
+        keep_ids = [row["id"] for row in response.data] if response.data else []
+        
+        if not keep_ids:
+            return
+            
+        # Delete articles in this category that are NOT in the keep_ids list
+        supabase_service.table("news_articles") \
+            .delete() \
+            .eq("category", category) \
+            .not_.in_("id", keep_ids) \
+            .execute()
+            
+        logger.info(f"Pruned articles for category '{category}' to keep only the latest {limit}.")
+    except Exception as e:
+        logger.error(f"Failed to prune articles for category '{category}': {e}")
+
 def ingest_articles(entries: List[Dict[str, Any]]) -> int:
     """
     Deduplicates and upserts articles into Supabase.
@@ -62,10 +92,12 @@ def ingest_articles(entries: List[Dict[str, Any]]) -> int:
         return 0
         
     unique_articles = {}
+    categories_to_prune = set()
     for entry in entries:
         try:
             article = map_entry_to_article(entry)
             unique_articles[article["external_id"]] = article
+            categories_to_prune.add(article["category"])
         except Exception as e:
             logger.error(f"Error mapping article {entry.get('title')}: {e}")
             
@@ -76,15 +108,15 @@ def ingest_articles(entries: List[Dict[str, Any]]) -> int:
         
     try:
         # Upsert into Supabase.
-        # on_conflict="external_id" ensures that if the article already exists,
-        # it updates it (or just ignores if we didn't change anything).
-        # We process in a single batch.
         response = supabase_service.table("news_articles").upsert(
             articles_data, 
             on_conflict="external_id"
         ).execute()
         
-        # response.data contains the returned rows
+        # After upsert, prune each category to keep only 10 articles
+        for category in categories_to_prune:
+            prune_articles_by_category(category, limit=10)
+            
         return len(response.data) if response.data else 0
         
     except Exception as e:
