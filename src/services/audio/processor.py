@@ -152,45 +152,50 @@ class AudioProcessor:
 
     def _chunk_and_upload(self, article_id: str, audio_bytes: bytes, audio_type: str) -> str:
         """
-        Chunks WAV bytes and uploads to S3.
+        Chunks WAV bytes, uploads to S3, and immediately cleans up tmp files.
         """
         run_id = str(uuid.uuid4())
         work_dir = os.path.join(self.temp_dir, run_id)
         os.makedirs(work_dir, exist_ok=True)
         
-        wav_path = os.path.join(work_dir, "input.wav")
-        with open(wav_path, "wb") as f:
-            f.write(audio_bytes)
+        try:
+            wav_path = os.path.join(work_dir, "input.wav")
+            with open(wav_path, "wb") as f:
+                f.write(audio_bytes)
+                
+            playlist_filename = f"{audio_type}.m3u8"
+            playlist_path = os.path.join(work_dir, playlist_filename)
+            segment_pattern = os.path.join(work_dir, f"{audio_type}_chunk_%03d.ts")
             
-        playlist_filename = f"{audio_type}.m3u8"
-        playlist_path = os.path.join(work_dir, playlist_filename)
-        segment_pattern = os.path.join(work_dir, f"{audio_type}_chunk_%03d.ts")
-        
-        cmd = [
-            "ffmpeg", "-y", "-i", wav_path,
-            "-c:a", "aac", "-b:a", "128k",
-            "-f", "hls", "-hls_time", "6",
-            "-hls_playlist_type", "vod",
-            "-hls_segment_filename", segment_pattern,
-            playlist_path
-        ]
-        
-        subprocess.run(cmd, check=True, capture_output=True)
+            cmd = [
+                "ffmpeg", "-y", "-i", wav_path,
+                "-c:a", "aac", "-b:a", "128k",
+                "-f", "hls", "-hls_time", "6",
+                "-hls_playlist_type", "vod",
+                "-hls_segment_filename", segment_pattern,
+                playlist_path
+            ]
             
-        # Upload to S3
-        s3_base_path = f"articles/{article_id}/{audio_type}"
-        hls_url = ""
-        
-        for root, _, files in os.walk(work_dir):
-            for file in files:
-                if file.endswith((".ts", ".m3u8")):
-                    file_path = os.path.join(root, file)
-                    object_name = f"{s3_base_path}/{file}"
-                    content_type = "application/vnd.apple.mpegurl" if file.endswith(".m3u8") else "video/MP2T"
-                    url = s3_service.upload_file(file_path, object_name, content_type)
-                    if file == playlist_filename:
-                        hls_url = url
-                        
-        return hls_url
+            subprocess.run(cmd, check=True, capture_output=True)
+                
+            # Upload to S3
+            s3_base_path = f"articles/{article_id}/{audio_type}"
+            hls_url = ""
+            
+            for root, _, files in os.walk(work_dir):
+                for file in files:
+                    if file.endswith((".ts", ".m3u8")):
+                        file_path = os.path.join(root, file)
+                        object_name = f"{s3_base_path}/{file}"
+                        content_type = "application/vnd.apple.mpegurl" if file.endswith(".m3u8") else "video/MP2T"
+                        url = s3_service.upload_file(file_path, object_name, content_type)
+                        if file == playlist_filename:
+                            hls_url = url
+                            
+            return hls_url
+        finally:
+            # Clean up tmp files immediately instead of waiting for cleanup job
+            if os.path.exists(work_dir):
+                shutil.rmtree(work_dir, ignore_errors=True)
 
 audio_processor = AudioProcessor()

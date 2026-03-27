@@ -268,17 +268,29 @@ async def bookmark_article(
             
         # Map raw RSS entry to DB article
         article = map_entry_to_article(article_data)
+        external_id = article["external_id"]
         
-        # Upsert article into news_articles
-        result = supabase_service.table("news_articles").upsert(
+        # Set audio_status='none' so the scheduler skips bookmarked-only articles.
+        # ignore_duplicates=True means if the article already exists (via RSS ingest),
+        # this INSERT is a no-op — preserving the existing audio_status.
+        article["audio_status"] = "none"
+        supabase_service.table("news_articles").upsert(
             [article], 
-            on_conflict="external_id"
+            on_conflict="external_id",
+            ignore_duplicates=True
         ).execute()
         
-        if not result.data:
-            raise Exception("Failed to upsert article")
+        # Fetch the article ID (works whether it was just inserted or already existed)
+        lookup = supabase_service.table("news_articles") \
+            .select("id") \
+            .eq("external_id", external_id) \
+            .single() \
+            .execute()
+        
+        if not lookup.data:
+            raise Exception("Article not found after upsert")
             
-        article_id = result.data[0]["id"]
+        article_id = lookup.data["id"]
         
         # Create bookmark mapping
         supabase_service.table("bookmarks").upsert(
@@ -334,3 +346,25 @@ async def get_user_bookmarks(
     except Exception as e:
         logger.error(f"Error fetching bookmarks: {e}")
         raise HTTPException(status_code=500, detail="Internal server error while fetching bookmarks")
+
+@router.put("/news/interests", response_model=None)
+async def update_user_interests(
+    interests: List[str] = Body(..., embed=True, description="List of interest categories, e.g. ['Tech', 'Finance']"),
+    user: dict = Depends(get_current_user)
+):
+    """Update the authenticated user's interest preferences."""
+    try:
+        user_id = getattr(user, "id", None) or user.get("id")
+        if not user_id:
+            raise HTTPException(status_code=401, detail="User ID not found in token")
+        
+        supabase_service.table("users").update(
+            {"interests": interests}
+        ).eq("id", user_id).execute()
+        
+        return {"status": "success", "interests": interests}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error updating interests: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error while updating interests")
