@@ -16,6 +16,20 @@ logger = logging.getLogger(__name__)
 # Structure: { "category": { "entries": [...], "fetched_at": timestamp } }
 RSS_CACHE = {}
 
+def _clean_article(article: dict) -> dict:
+    """Removes internal database fields that are not useful for the client."""
+    if not isinstance(article, dict):
+        return article
+    
+    # Create a copy to avoid mutating the original (important for cached entries)
+    clean = article.copy()
+    
+    # Fields to strip from API response
+    internal_fields = ["raw_data", "headline_search_vector"]
+    for field in internal_fields:
+        clean.pop(field, None)
+    return clean
+
 async def get_cached_feed(category: str) -> List[dict]:
     """
     Retrieves RSS entries for a category from cache if valid (60s),
@@ -29,7 +43,7 @@ async def get_cached_feed(category: str) -> List[dict]:
         return cache_entry["entries"]
         
     # Cache miss or expired
-    feed_descriptors = [f for f in RSS_FEEDS if f["category"] == category]
+    feed_descriptors = [f for f in RSS_FEEDS if f["category"].lower() == category.lower()]
     if not feed_descriptors:
         return []
         
@@ -57,42 +71,65 @@ async def get_news_by_category(
     user: dict = Depends(get_current_user)
 ):
     try:
-        # Assuming table is 'news_articles' and we sort by newest 'created_at' or 'published_at'
-        # Fallback to 'created_at' as that is Supabase default
-        # Use selective columns to keep payload light.
-        # Excludes: content, raw_data, headline_search_vector
-        columns = (
-            "id, external_id, source_name, author, headline, summarized_content, "
-            "source_url, url_to_image, category, published_at, "
-            "headline_hls_base_url, summary_hls_base_url, duration_seconds, audio_status"
-        )
+        # Direct RSS pull instead of DB
+        all_entries = await get_cached_feed(category)
         
-        response = supabase_service.table("news_articles") \
-            .select(columns) \
-            .eq("category", category) \
-            .eq("audio_status", "ready") \
-            .order("published_at", desc=True) \
-            .limit(limit) \
-            .execute()
-            
-        articles = response.data
-        for article in articles:
-            if article.get("headline_hls_base_url"):
-                # Convert the stored path into a local proxy URL
-                # Path format: articles/{id}/{type}/headline.m3u8
-                path_parts = article["headline_hls_base_url"].split("/")
-                if len(path_parts) >= 4:
-                    article["headline_hls_base_url"] = f"/api/v1/audio/{path_parts[1]}/{path_parts[2]}/{path_parts[3]}"
-            
-            if article.get("summary_hls_base_url"):
-                path_parts = article["summary_hls_base_url"].split("/")
-                if len(path_parts) >= 4:
-                    article["summary_hls_base_url"] = f"/api/v1/audio/{path_parts[1]}/{path_parts[2]}/{path_parts[3]}"
-            
+        # Sort by publication date (descending)
+        def get_date(entry):
+            try:
+                if "published_parsed" in entry and entry["published_parsed"]:
+                    return datetime(*entry["published_parsed"][:6])
+                if "published" in entry:
+                    return datetime.fromisoformat(entry["published"].replace("Z", "+00:00"))
+                return datetime.min
+            except:
+                return datetime.min
+
+        all_entries.sort(key=get_date, reverse=True)
+        articles = [_clean_article(art) for art in all_entries[:limit]]
+        
         return {"category": category, "limit": limit, "count": len(articles), "articles": articles}
     except Exception as e:
         logger.error(f"Error fetching news for category '{category}': {e}")
         raise HTTPException(status_code=500, detail="Internal server error while fetching news")
+
+@router.get("/news/search", response_model=None)
+async def search_live_news(
+    q: str = Query(..., description="The search query text"),
+    user: dict = Depends(get_current_user)
+):
+    """
+    Searches for news articles directly from RSS providers (Google News RSS).
+    Bypasses the database to provide real-time, global results.
+    """
+    try:
+        if not q.strip():
+            return {"count": 0, "articles": [], "query": q}
+
+        # 1. Construct Google News Search RSS URL
+        search_url = f"https://news.google.com/rss/search?q={q}&hl=en-US&gl=US&ceid=US:en"
+        
+        # 2. Use our existing fetch_feed logic (wrapped in a descriptor)
+        descriptor = {
+            "url": search_url,
+            "source": "RSS Search",
+            "category": "Search"
+        }
+        
+        all_entries = await fetch_feed(descriptor)
+        
+        # 3. Formatter: Ensure results look like our Article model
+        # We can reuse part of map_entry_to_article or similar, or just return raw with descriptor enrichment
+        # The fetch_feed already adds descriptor_source and descriptor_category
+        
+        return {
+            "query": q,
+            "count": len(all_entries),
+            "articles": [_clean_article(art) for art in all_entries]
+        }
+    except Exception as e:
+        logger.error(f"Error during live search for '{q}': {e}")
+        raise HTTPException(status_code=500, detail="Internal server error during search")
 
 @router.get("/news/briefing", response_model=None)
 async def get_daily_briefing(
@@ -119,41 +156,31 @@ async def get_daily_briefing(
             
             if user_data.data and user_data.data.get("interests"):
                 final_interests = user_data.data["interests"]
+            else:
+                final_interests = ["International"]
+
+        # Daily briefing requires playable audio, so only return fully processed entries.
+        user_id = getattr(user, "id", None) or user.get("id")
         
-        # Build query
-        query = supabase_service.table("news_articles") \
-            .select("id, external_id, source_name, author, headline, summarized_content, "
-                    "source_url, url_to_image, category, published_at, "
-                    "headline_hls_base_url, summary_hls_base_url, duration_seconds, audio_status") \
-            .eq("audio_status", "ready")
-        
-        if final_interests:
-            query = query.in_("category", final_interests)
-            
-        # Category-wise sorting: category ASC, published_at DESC
-        response = query.order("category", desc=False) \
+        response = supabase_service.table("news_articles") \
+            .select("*") \
+            .in_("category", final_interests) \
+            .eq("audio_status", "ready") \
             .order("published_at", desc=True) \
             .range(offset, offset + limit - 1) \
             .execute()
-            
-        articles = response.data
-        for article in articles:
-            # Proxy audio URLs (DRY: could be a helper function)
-            for key in ["headline_hls_base_url", "summary_hls_base_url"]:
-                if article.get(key):
-                    parts = article[key].split("/")
-                    if len(parts) >= 4:
-                        article[key] = f"/api/v1/audio/{parts[1]}/{parts[2]}/{parts[3]}"
+             
+        articles = response.data if response.data else []
             
         return {
             "interests": final_interests,
             "limit": limit,
             "offset": offset,
             "count": len(articles),
-            "articles": articles
+            "articles": [_clean_article(art) for art in articles]
         }
     except Exception as e:
-        logger.error(f"Error fetching briefing: {e}")
+        logger.error(f"Error fetching briefing from DB: {e}")
         raise HTTPException(status_code=500, detail="Internal server error while fetching briefing")
 
 @router.get("/news/live", response_model=None)
@@ -168,16 +195,54 @@ async def get_live_news(
         if not user_id:
             raise HTTPException(status_code=401, detail="User ID not found in token")
 
+        # Normalize category
+        category_low = category.lower()
+
         # 1. Fetch from Cache or Source
-        all_entries = await get_cached_feed(category)
-        if not all_entries:
+        if category_low == "for you":
+            # Fetch user interests
+            user_data = supabase_service.table("users") \
+                .select("interests") \
+                .eq("id", user_id) \
+                .single() \
+                .execute()
+            
+            interests = user_data.data.get("interests") if user_data.data else []
+            if not interests:
+                # Fallback to International if no interests selected
+                interests = ["International"]
+            
+            # Aggregate from all interests
+            all_entries = []
+            for interest in interests:
+                entries = await get_cached_feed(interest)
+                all_entries.extend(entries)
+            
+            # Deduplicate by ID/Link
+            seen_ids = set()
+            unique_entries = []
+            for entry in all_entries:
+                eid = entry.get("id") or entry.get("link")
+                if eid and eid not in seen_ids:
+                    unique_entries.append(entry)
+                    seen_ids.add(eid)
+            all_entries = unique_entries
+        else:
+            all_entries = await get_cached_feed(category)
+
+        if not all_entries and category_low != "for you":
             raise HTTPException(status_code=404, detail=f"No news articles found for category '{category}'")
             
         # 2. Sort by publication date (descending)
         def get_date(entry):
             try:
+                # Try published_parsed
                 if "published_parsed" in entry and entry["published_parsed"]:
                     return datetime(*entry["published_parsed"][:6])
+                # Some feeds might only have 'published' string
+                if "published" in entry:
+                    # Generic parsing fallback
+                    return datetime.fromisoformat(entry["published"].replace("Z", "+00:00"))
                 return datetime.min
             except:
                 return datetime.min
@@ -228,7 +293,7 @@ async def get_live_news(
             "before": before,
             "next_cursor": next_cursor,
             "count": len(filtered_entries), 
-            "articles": filtered_entries
+            "articles": [_clean_article(art) for art in filtered_entries]
         }
     except HTTPException:
         raise
@@ -303,20 +368,60 @@ async def bookmark_article(
         logger.error(f"Error bookmarking article: {e}")
         raise HTTPException(status_code=500, detail=f"Internal server error while bookmarking: {e}")
 
-@router.delete("/news/bookmark/{article_id}", response_model=None)
+@router.delete("/news/bookmark/{article_id_or_url:path}", response_model=None)
 async def unbookmark_article(
-    article_id: str,
+    article_id_or_url: str,
     user: dict = Depends(get_current_user)
 ):
+    """
+    Remove a bookmark by either the internal UUID or the source URL.
+    The :path modifier allows the article_id_or_url to contain slashes (URLs).
+    """
     try:
         user_id = getattr(user, "id", None) or user.get("id")
         if not user_id:
             raise HTTPException(status_code=401, detail="User ID not found in token")
+        
+        target_article_id = article_id_or_url
+        
+        # 1. Identify if it's a UUID, Hash (external_id), or raw URL
+        import re
+        is_uuid = False
+        try:
+            import uuid
+            uuid.UUID(article_id_or_url)
+            is_uuid = True
+        except (ValueError, TypeError):
+            is_uuid = False
             
+        is_hash = bool(re.match(r"^[a-fA-F0-9]{64}$", article_id_or_url))
+        
+        if not is_uuid:
+            # Resolve the internal ID via external_id lookup
+            if is_hash:
+                # It's already our SHA256 external_id
+                external_id = article_id_or_url.lower()
+            else:
+                # It's a raw source URL, hash it to get our external_id
+                from src.services.rss.ingester import build_external_id
+                external_id = build_external_id({"link": article_id_or_url})
+        
+            lookup = supabase_service.table("news_articles") \
+                .select("id") \
+                .eq("external_id", external_id) \
+                .execute()
+                
+            if not lookup.data:
+                # Article not found in our system, nothing to delete
+                return {"status": "success", "message": "Article not found; no bookmark removed."}
+                
+            target_article_id = lookup.data[0]["id"]
+
+        # 2. Delete the bookmark mapping
         supabase_service.table("bookmarks") \
             .delete() \
             .eq("user_id", user_id) \
-            .eq("article_id", article_id) \
+            .eq("article_id", target_article_id) \
             .execute()
             
         return {"status": "success"}
@@ -337,10 +442,11 @@ async def get_user_bookmarks(
         response = supabase_service.table("bookmarks") \
             .select("news_articles(*)") \
             .eq("user_id", user_id) \
+            .order("created_at", desc=True) \
             .execute()
             
-        # Flatten the result
-        articles = [row["news_articles"] for row in response.data if row.get("news_articles")]
+        # Flatten and clean the result
+        articles = [_clean_article(row["news_articles"]) for row in response.data if row.get("news_articles")]
         
         return {"count": len(articles), "articles": articles}
     except Exception as e:

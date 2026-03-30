@@ -8,6 +8,8 @@ class Settings:
     SUPABASE_KEY: str = os.getenv("SUPABASE_KEY", "")
     SUPABASE_SERVICE_ROLE_KEY: str = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
     POSTGRES_URL: str = os.getenv("POSTGRES_URL", "")
+    REDIS_URL: str = os.getenv("REDIS_URL", "redis://localhost:6379")
+
     
     # S3 Storage Settings
     AWS_ACCESS_KEY_ID: str = os.getenv("AWS_ACCESS_KEY_ID")
@@ -20,7 +22,7 @@ class Settings:
     TEMP_DIR: str = os.getenv("TEMP_DIR", "temp_audio")
     
     # RSS CRON JOB Settings
-    RSS_FETCH_INTERVAL_MINUTES: int = int(os.getenv("RSS_FETCH_INTERVAL_MINUTES", "180"))
+    RSS_FETCH_INTERVAL_MINUTES: int = int(os.getenv("RSS_FETCH_INTERVAL_MINUTES", "5"))
     
     # Admin Settings
     ALLOW_DEV_CLEANUP: bool = os.getenv("ALLOW_DEV_CLEANUP", "false").lower() == "true"

@@ -27,6 +27,57 @@ class AudioProcessor:
         # Thread pool for concurrent local processing (FFmpeg + S3)
         self.executor = ThreadPoolExecutor(max_workers=5)
 
+    async def process_single_article(self, article: Dict[str, Any]):
+        """
+        Processes a single article through the synthesis and finalization flow.
+        """
+        article_id = article["id"]
+        logger.info(f"Processing single audio task for article {article_id}")
+
+        # Update to processing
+        supabase_service.table("news_articles").update({"audio_status": "processing"}).eq("id", article_id).execute()
+
+        tasks = [
+            {
+                "id": article_id,
+                "text": article["headline"],
+                "lang": "English",
+                "type": "headline"
+            },
+            {
+                "id": article_id,
+                "text": article["summarized_content"],
+                "lang": "English",
+                "type": "summary"
+            }
+        ]
+
+        try:
+            processor_cls = modal.Cls.from_name("qwen3-news-batch", "NewsProcessor")
+            processor_instance = processor_cls()
+            
+            audios = {}
+            task_idx = 0
+            async for result in processor_instance.synthesize.map.aio(tasks):
+                audio_type = tasks[task_idx]["type"]
+                audios[audio_type] = result["audio"]
+                task_idx += 1
+            
+            if "headline" in audios and "summary" in audios:
+                # Finalize synchronously here so the task is truly finished
+                self._finalize_article(article_id, audios, article.get("audio_attempts", 0))
+                logger.info(f"Successfully processed single article {article_id}")
+
+        except Exception as e:
+            logger.error(f"Single article audio processing failed for {article_id}: {e}")
+            new_attempts = article.get("audio_attempts", 0) + 1
+            status = f"failed({new_attempts})"
+            supabase_service.table("news_articles").update({
+                "audio_status": status,
+                "audio_attempts": new_attempts
+            }).eq("id", article_id).execute()
+            raise e
+
     async def process_batch(self, articles: List[Dict[str, Any]]):
         """
         Processes a batch of articles in parallel using Modal map.

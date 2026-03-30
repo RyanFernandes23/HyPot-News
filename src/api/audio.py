@@ -26,23 +26,9 @@ async def proxy_audio_file(
     object_name = f"articles/{article_id}/{audio_type}/{filename}"
     ext = filename.rsplit(".", 1)[-1].lower()
 
-    if ext == "ts":
-        # Redirect .ts segments to a presigned URL for better performance
-        presigned_url = s3_service.generate_presigned_url(object_name, expires_in=300)
-        if not presigned_url:
-            raise HTTPException(status_code=404, detail="Audio segment not found")
-        
-        return Response(
-            status_code=302,
-            headers={
-                "Location": presigned_url,
-                "Cache-Control": "max-age=300",
-                "Access-Control-Allow-Origin": "*",
-            }
-        )
-
-    # Proxy .m3u8 playlists through FastAPI
-    if ext == "m3u8":
+    # Proxy BOTH .m3u8 and .ts files through FastAPI
+    # (Mobile HLS players like Flutter's ExoPlayer can struggle with 302 redirects for segments)
+    if ext in ["m3u8", "ts"]:
         content_type = CONTENT_TYPES.get(ext, "application/octet-stream")
         loop = asyncio.get_event_loop()
         try:
@@ -51,15 +37,15 @@ async def proxy_audio_file(
                 lambda: s3_service.get_file_stream(object_name)
             )
         except Exception as e:
-            logger.error(f"S3 fetch failed for playlist {object_name}: {e}")
-            raise HTTPException(status_code=404, detail="Playlist not found")
+            logger.error(f"S3 fetch failed for {object_name}: {e}")
+            raise HTTPException(status_code=404, detail="Audio file not found")
 
         etag = s3_resp.get("ETag", "").strip('"')
         if etag and request.headers.get("If-None-Match") == etag:
             return Response(status_code=304)
 
         headers = {
-            "Cache-Control": "no-cache",
+            "Cache-Control": "max-age=300" if ext == "ts" else "no-cache",
             "Access-Control-Allow-Origin": "*",
             "Accept-Ranges": "bytes",
         }
