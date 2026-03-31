@@ -7,7 +7,7 @@ from datetime import datetime
 from src.core.config import settings
 from src.core.scheduler import scheduler
 from src.jobs.news_fetch import run_news_fetch_job
-from src.jobs.audio_jobs import run_audio_generation_job, run_temp_cleanup_job
+from src.jobs.audio_jobs import run_briefing_audio_prep, run_temp_cleanup_job
 
 # Configure logging for the worker
 logging.basicConfig(
@@ -37,9 +37,22 @@ async def start_worker():
         replace_existing=True,
     )
     
+    # Schedule Daily Briefing Audio Prep (7:00 AM and 7:00 PM)
+    # Using multiple hours in cron trigger. 
+    # Note: Times are in UTC if not specified otherwise in scheduler.py
+    scheduler.add_job(
+        run_briefing_audio_prep,
+        trigger="cron",
+        hour="1,13", # Corresponds to ~6:30/7:30 AM/PM in IST (+5:30)
+        minute=30,
+        id="daily_briefing_prep",
+        replace_existing=True,
+    )
+    
     scheduler.start()
     logger.info("Worker scheduler started.")
     logger.info(f"RSS Fetch: every {settings.RSS_FETCH_INTERVAL_MINUTES} min")
+    logger.info("Daily Briefing Prep: Scheduled for Morning & Evening")
     logger.info("Dramatiq: listening for immediate audio tasks...")
 
     

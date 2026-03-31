@@ -12,57 +12,17 @@ import logging
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
-# Module-level cache for RSS feeds
-# Structure: { "category": { "entries": [...], "fetched_at": timestamp } }
-RSS_CACHE = {}
-
 def _clean_article(article: dict) -> dict:
     """Removes internal database fields that are not useful for the client."""
     if not isinstance(article, dict):
         return article
     
-    # Create a copy to avoid mutating the original (important for cached entries)
     clean = article.copy()
-    
-    # Fields to strip from API response
     internal_fields = ["raw_data", "headline_search_vector"]
     for field in internal_fields:
         clean.pop(field, None)
     return clean
 
-async def get_cached_feed(category: str) -> List[dict]:
-    """
-    Retrieves RSS entries for a category from cache if valid (60s),
-    else fetches fresh from source.
-    """
-    now = time.time()
-    cache_entry = RSS_CACHE.get(category)
-    
-    if cache_entry and (now - cache_entry["fetched_at"] < 60):
-        logger.info(f"Using cached RSS feed for category: {category}")
-        return cache_entry["entries"]
-        
-    # Cache miss or expired
-    feed_descriptors = [f for f in RSS_FEEDS if f["category"].lower() == category.lower()]
-    if not feed_descriptors:
-        return []
-        
-    all_entries = []
-    for descriptor in feed_descriptors:
-        try:
-            entries = await fetch_feed(descriptor)
-            all_entries.extend(entries)
-        except Exception as e:
-            logger.error(f"Error fetching feed in cache helper: {e}")
-            
-    if all_entries:
-        RSS_CACHE[category] = {
-            "entries": all_entries,
-            "fetched_at": now
-        }
-        logger.info(f"Updated RSS cache for category: {category} ({len(all_entries)} entries)")
-        
-    return all_entries
 
 @router.get("/news", response_model=None)
 async def get_news_by_category(
@@ -71,22 +31,30 @@ async def get_news_by_category(
     user: dict = Depends(get_current_user)
 ):
     try:
-        # Direct RSS pull instead of DB
-        all_entries = await get_cached_feed(category)
+        user_id = getattr(user, "id", None) or user.get("id")
         
-        # Sort by publication date (descending)
-        def get_date(entry):
-            try:
-                if "published_parsed" in entry and entry["published_parsed"]:
-                    return datetime(*entry["published_parsed"][:6])
-                if "published" in entry:
-                    return datetime.fromisoformat(entry["published"].replace("Z", "+00:00"))
-                return datetime.min
-            except:
-                return datetime.min
-
-        all_entries.sort(key=get_date, reverse=True)
-        articles = [_clean_article(art) for art in all_entries[:limit]]
+        # 1. Fetch read articles for filtering
+        read_response = supabase_service.table("read_articles") \
+            .select("external_id") \
+            .eq("user_id", user_id) \
+            .execute()
+        read_ids = [row["external_id"] for row in read_response.data] if read_response.data else []
+        
+        # 2. Query DB with recency (48h) and category
+        from datetime import timedelta
+        recency_threshold = (datetime.utcnow() - timedelta(hours=48)).isoformat()
+        
+        query = supabase_service.table("news_articles") \
+            .select("*") \
+            .eq("category", category) \
+            .gt("published_at", recency_threshold) \
+            .order("published_at", desc=True)
+            
+        if read_ids:
+            query = query.not_.in_("external_id", read_ids[:500])
+            
+        response = query.limit(limit).execute()
+        articles = [_clean_article(art) for art in response.data] if response.data else []
         
         return {"category": category, "limit": limit, "count": len(articles), "articles": articles}
     except Exception as e:
@@ -185,121 +153,70 @@ async def get_daily_briefing(
 
 @router.get("/news/live", response_model=None)
 async def get_live_news(
-    category: str = Query(..., description="The category of news to fetch from live RSS feeds"),
+    category: str = Query(..., description="The category of news to fetch (now from DB)"),
     limit: int = Query(20, ge=1, le=50, description="Number of items to return"),
     before: Optional[str] = Query(None, description="ISO timestamp cursor for pagination"),
     user: dict = Depends(get_current_user)
 ):
+    """
+    Refactored to fetch from DB instead of live RSS.
+    Supports paging via the 'before' timestamp.
+    """
     try:
         user_id = getattr(user, "id", None) or user.get("id")
-        if not user_id:
-            raise HTTPException(status_code=401, detail="User ID not found in token")
+        
+        # 1. Fetch read articles for filtering
+        read_response = supabase_service.table("read_articles") \
+            .select("external_id") \
+            .eq("user_id", user_id) \
+            .execute()
+        read_ids = [row["external_id"] for row in read_response.data] if read_response.data else []
 
-        # Normalize category
-        category_low = category.lower()
-
-        # 1. Fetch from Cache or Source
-        if category_low == "for you":
-            # Fetch user interests
+        # 2. Determine Categories
+        categories = [category]
+        if category.lower() == "for you":
             user_data = supabase_service.table("users") \
                 .select("interests") \
                 .eq("id", user_id) \
                 .single() \
                 .execute()
-            
-            interests = user_data.data.get("interests") if user_data.data else []
-            if not interests:
-                # Fallback to International if no interests selected
-                interests = ["International"]
-            
-            # Aggregate from all interests
-            all_entries = []
-            for interest in interests:
-                entries = await get_cached_feed(interest)
-                all_entries.extend(entries)
-            
-            # Deduplicate by ID/Link
-            seen_ids = set()
-            unique_entries = []
-            for entry in all_entries:
-                eid = entry.get("id") or entry.get("link")
-                if eid and eid not in seen_ids:
-                    unique_entries.append(entry)
-                    seen_ids.add(eid)
-            all_entries = unique_entries
-        else:
-            all_entries = await get_cached_feed(category)
+            categories = user_data.data.get("interests") if user_data.data else ["International"]
 
-        if not all_entries and category_low != "for you":
-            raise HTTPException(status_code=404, detail=f"No news articles found for category '{category}'")
+        # 3. Build Query
+        from datetime import timedelta
+        recency_threshold = (datetime.utcnow() - timedelta(hours=48)).isoformat()
+        
+        query = supabase_service.table("news_articles") \
+            .select("*") \
+            .in_("category", categories) \
+            .gt("published_at", recency_threshold) \
+            .order("published_at", desc=True)
             
-        # 2. Sort by publication date (descending)
-        def get_date(entry):
-            try:
-                # Try published_parsed
-                if "published_parsed" in entry and entry["published_parsed"]:
-                    return datetime(*entry["published_parsed"][:6])
-                # Some feeds might only have 'published' string
-                if "published" in entry:
-                    # Generic parsing fallback
-                    return datetime.fromisoformat(entry["published"].replace("Z", "+00:00"))
-                return datetime.min
-            except:
-                return datetime.min
-
-        all_entries.sort(key=get_date, reverse=True)
-
-        # 3. Fetch read articles for filtering
-        read_response = supabase_service.table("read_articles") \
-            .select("external_id") \
-            .eq("user_id", user_id) \
-            .execute()
-        read_ids = {row["external_id"] for row in read_response.data}
-
-        # 4. Filter and Paginate
-        filtered_entries = []
-        before_dt = None
         if before:
-            try:
-                # Support common ISO formats
-                before_dt = datetime.fromisoformat(before.replace("Z", "+00:00"))
-            except Exception as e:
-                logger.warning(f"Invalid before timestamp '{before}': {e}")
+            query = query.lt("published_at", before)
+            
+        if read_ids:
+            query = query.not_.in_("external_id", read_ids[:500])
+            
+        response = query.limit(limit).execute()
+        articles = [_clean_article(art) for art in response.data] if response.data else []
 
-        for entry in all_entries:
-            ext_id = entry.get("id") or entry.get("link")
-            if not ext_id or ext_id in read_ids:
-                continue
-                
-            entry_dt = get_date(entry)
-            if before_dt and entry_dt >= before_dt:
-                continue
-            
-            filtered_entries.append(entry)
-            if len(filtered_entries) >= limit:
-                break
-            
-        # 5. Determine next_cursor
+        # 4. next_cursor
         next_cursor = None
-        if filtered_entries:
-            oldest_entry = filtered_entries[-1]
-            oldest_dt = get_date(oldest_entry)
-            if oldest_dt != datetime.min:
-                next_cursor = oldest_dt.isoformat()
+        if articles:
+            next_cursor = articles[-1].get("published_at")
             
         return {
             "category": category, 
             "limit": limit,
             "before": before,
             "next_cursor": next_cursor,
-            "count": len(filtered_entries), 
-            "articles": [_clean_article(art) for art in filtered_entries]
+            "count": len(articles), 
+            "articles": articles
         }
-    except HTTPException:
-        raise
     except Exception as e:
-        logger.error(f"Error fetching live news: {e}")
-        raise HTTPException(status_code=500, detail="Internal server error while fetching live news")
+        logger.error(f"Error fetching DB-backed live news: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error while fetching news")
 
 @router.post("/news/read", response_model=None)
 async def mark_as_read(

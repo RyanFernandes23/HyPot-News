@@ -23,6 +23,7 @@ class Settings:
     
     # RSS CRON JOB Settings
     RSS_FETCH_INTERVAL_MINUTES: int = int(os.getenv("RSS_FETCH_INTERVAL_MINUTES", "5"))
+    MAX_AUDIO_TASKS_PER_CATEGORY: int = int(os.getenv("MAX_AUDIO_TASKS_PER_CATEGORY", "3"))
     
     # Admin Settings
     ALLOW_DEV_CLEANUP: bool = os.getenv("ALLOW_DEV_CLEANUP", "false").lower() == "true"
