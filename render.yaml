@@ -11,7 +11,7 @@ services:
           name: news-cache
           property: connectionString
 
-  # 2. The Custom Worker (uv run src.worker)
+  # 2. The General Worker
   - type: worker
     name: news-general-worker
     runtime: docker
@@ -28,7 +28,6 @@ services:
   - type: worker
     name: news-dramatiq-actors
     runtime: docker
-    # Replace 'src.main' with the actual file where your actors are defined
     startCommand: uv run dramatiq src.main 
     plan: starter
     envVars:
@@ -38,8 +37,8 @@ services:
           name: news-cache
           property: connectionString
 
-# Managed Redis instance for Dramatiq and Caching
-redis:
-  name: news-cache
-  plan: free
-  ipAllowList: [] # Restricts access to internal services only
+  # 4. The Redis Instance (Moved inside the services list)
+  - type: redis
+    name: news-cache
+    plan: free
+    ipAllowList: [] # Only allow internal traffic
