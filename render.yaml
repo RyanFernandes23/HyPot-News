@@ -1,0 +1,45 @@
+services:
+  # 1. The FastAPI Web Server
+  - type: web
+    name: news-api
+    runtime: docker
+    plan: starter
+    envVars:
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: news-cache
+          property: connectionString
+
+  # 2. The Custom Worker (uv run src.worker)
+  - type: worker
+    name: news-general-worker
+    runtime: docker
+    startCommand: uv run src.worker
+    plan: starter
+    envVars:
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: news-cache
+          property: connectionString
+
+  # 3. The Dramatiq Actor
+  - type: worker
+    name: news-dramatiq-actors
+    runtime: docker
+    # Replace 'src.main' with the actual file where your actors are defined
+    startCommand: uv run dramatiq src.main 
+    plan: starter
+    envVars:
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: news-cache
+          property: connectionString
+
+# Managed Redis instance for Dramatiq and Caching
+redis:
+  name: news-cache
+  plan: free
+  ipAllowList: [] # Restricts access to internal services only
