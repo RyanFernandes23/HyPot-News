@@ -15,7 +15,8 @@ services:
   - type: worker
     name: news-general-worker
     runtime: docker
-    startCommand: uv run src.worker
+    # Changed from startCommand to dockerCommand
+    dockerCommand: uv run python -m src.worker
     plan: starter
     envVars:
       - key: REDIS_URL
@@ -28,7 +29,8 @@ services:
   - type: worker
     name: news-dramatiq-actors
     runtime: docker
-    startCommand: uv run dramatiq src.main 
+    # Changed from startCommand to dockerCommand
+    dockerCommand: uv run dramatiq src.actors
     plan: starter
     envVars:
       - key: REDIS_URL
@@ -37,8 +39,8 @@ services:
           name: news-cache
           property: connectionString
 
-  # 4. The Redis Instance (Moved inside the services list)
+  # 4. Redis Instance
   - type: redis
     name: news-cache
     plan: free
-    ipAllowList: [] # Only allow internal traffic
+    ipAllowList: []
