@@ -25,6 +25,10 @@ class Settings:
     RSS_FETCH_INTERVAL_MINUTES: int = int(os.getenv("RSS_FETCH_INTERVAL_MINUTES", "5"))
     MAX_AUDIO_TASKS_PER_CATEGORY: int = int(os.getenv("MAX_AUDIO_TASKS_PER_CATEGORY", "3"))
     
+    # Briefing Schedule (UTC)
+    BRIEFING_SCHEDULE_HOUR: str = os.getenv("BRIEFING_SCHEDULE_HOUR", "1")
+    BRIEFING_SCHEDULE_MINUTE: str = os.getenv("BRIEFING_SCHEDULE_MINUTE", "30")
+    
     # Admin Settings
     ALLOW_DEV_CLEANUP: bool = os.getenv("ALLOW_DEV_CLEANUP", "false").lower() == "true"
 

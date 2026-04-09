@@ -43,12 +43,11 @@ async def lifespan(app: FastAPI):
         replace_existing=True,
     )
 
-    # --- Schedule Daily Briefing Audio Prep (1:30 UTC & 13:30 UTC → ~7 AM/PM IST) ---
     scheduler.add_job(
         run_briefing_audio_prep,
         trigger="cron",
-        hour="1,13",
-        minute=30,
+        hour=settings.BRIEFING_SCHEDULE_HOUR,
+        minute=settings.BRIEFING_SCHEDULE_MINUTE,
         id="daily_briefing_prep",
         replace_existing=True,
     )
