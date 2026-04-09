@@ -26,7 +26,7 @@ def _clean_article(article: dict) -> dict:
 
 @router.get("/news", response_model=None)
 async def get_news_by_category(
-    category: str = Query(..., description="The category of news to fetch, e.g., 'Tech', 'Finance'"),
+    category: str = Query(..., description="The category of news to fetch, e.g., 'Technology', 'Finance', 'Startups', 'International'"),
     limit: int = Query(10, ge=1, le=100, description="Number of top articles to fetch"),
     user: dict = Depends(get_current_user)
 ):
@@ -372,7 +372,7 @@ async def get_user_bookmarks(
 
 @router.put("/news/interests", response_model=None)
 async def update_user_interests(
-    interests: List[str] = Body(..., embed=True, description="List of interest categories, e.g. ['Tech', 'Finance']"),
+    interests: List[str] = Body(..., embed=True, description="List of interest categories, e.g. ['Startups', 'Finance', 'Technology', 'International']"),
     user: dict = Depends(get_current_user)
 ):
     """Update the authenticated user's interest preferences."""

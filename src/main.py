@@ -53,7 +53,7 @@ async def lifespan(app: FastAPI):
     )
 
     scheduler.start()
-    logger.info(f"Scheduler started — RSS every {settings.RSS_FETCH_INTERVAL_MINUTES}min, Briefing prep at 01:30 & 13:30 UTC")
+    logger.info(f"Scheduler started — RSS every {settings.RSS_FETCH_INTERVAL_MINUTES}min, Briefing prep at {settings.BRIEFING_SCHEDULE_HOUR}:{settings.BRIEFING_SCHEDULE_MINUTE.zfill(2)} UTC")
 
     yield
 
