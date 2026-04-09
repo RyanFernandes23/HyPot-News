@@ -16,18 +16,51 @@ from src.api.audio import router as audio_router
 from src.api.admin import router as admin_router
 from src.core.config import settings
 from src.core.scheduler import scheduler
+from src.jobs.news_fetch import run_news_fetch_job
+from src.jobs.audio_jobs import run_briefing_audio_prep, run_temp_cleanup_job
 
 logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Background jobs have been moved to src/worker.py
-    # This FastAPI process now only serves requests.
     logger.info("FastAPI service starting up...")
-    
+
+    # --- Schedule RSS Fetch Job ---
+    scheduler.add_job(
+        run_news_fetch_job,
+        trigger="interval",
+        minutes=settings.RSS_FETCH_INTERVAL_MINUTES,
+        id="rss_fetch_job",
+        replace_existing=True,
+    )
+
+    # --- Schedule Temp Audio Cleanup ---
+    scheduler.add_job(
+        run_temp_cleanup_job,
+        trigger="interval",
+        minutes=30,
+        id="temp_cleanup_job",
+        replace_existing=True,
+    )
+
+    # --- Schedule Daily Briefing Audio Prep (1:30 UTC & 13:30 UTC → ~7 AM/PM IST) ---
+    scheduler.add_job(
+        run_briefing_audio_prep,
+        trigger="cron",
+        hour="1,13",
+        minute=30,
+        id="daily_briefing_prep",
+        replace_existing=True,
+    )
+
+    scheduler.start()
+    logger.info(f"Scheduler started — RSS every {settings.RSS_FETCH_INTERVAL_MINUTES}min, Briefing prep at 01:30 & 13:30 UTC")
+
     yield
-    
+
     logger.info("FastAPI service shutting down...")
+    if scheduler.running:
+        scheduler.shutdown(wait=False)
 
 app = FastAPI(title="HyPot-News API", lifespan=lifespan)
 

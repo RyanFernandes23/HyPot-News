@@ -38,41 +38,49 @@ async def run_audio_generation_job():
 async def run_briefing_audio_prep():
     """
     Scheduled job to prepare audio for the "Daily Briefing".
-    Selects the Top 3 latest articles from each category and sends tasks to Dramatiq.
+    Fetches the top N latest articles per category and processes audio directly
+    without any message broker — simple direct async calls.
     """
-    from src.actors import process_audio_task
     from src.services.rss.feeds import RSS_FEEDS
-    
+
     logger.info("[Briefing Prep] Starting audio preparation for daily briefing...")
-    
-    # 1. Get unique categories defined in our RSS feeds
+
+    # Get unique categories from RSS feed definitions
     categories = list(set(f["category"] for f in RSS_FEEDS))
-    
-    tasks_sent = 0
+
+    tasks_processed = 0
+    tasks_skipped = 0
     limit = settings.MAX_AUDIO_TASKS_PER_CATEGORY
-    
+
     for category in categories:
         try:
-            # Fetch top N latest from DB for this category
+            # Fetch top N latest articles for this category
             response = supabase_service.table("news_articles") \
-                .select("id, headline, audio_status") \
+                .select("*") \
                 .eq("category", category) \
                 .order("published_at", desc=True) \
                 .limit(limit) \
                 .execute()
-                
+
             if response.data:
                 for article in response.data:
-                    # Only dispatch if not already processed/ready
-                    if article.get("audio_status") != "ready":
-                        logger.info(f"[Briefing Prep] Queuing audio for: {article.get('headline')}")
-                        process_audio_task.send(article["id"])
-                        tasks_sent += 1
-                        
+                    if article.get("audio_status") == "ready":
+                        tasks_skipped += 1
+                        continue
+                    logger.info(f"[Briefing Prep] Processing audio for: {article.get('headline')}")
+                    try:
+                        await audio_processor.process_single_article(article)
+                        tasks_processed += 1
+                    except Exception as article_err:
+                        logger.error(f"[Briefing Prep] Failed for article {article.get('id')}: {article_err}")
+
         except Exception as e:
-            logger.error(f"[Briefing Prep] Error fetching for category {category}: {e}")
-            
-    logger.info(f"[Briefing Prep] Successfully dispatched {tasks_sent} audio tasks across {len(categories)} categories.")
+            logger.error(f"[Briefing Prep] Error fetching category '{category}': {e}")
+
+    logger.info(
+        f"[Briefing Prep] Done — processed: {tasks_processed}, skipped (already ready): {tasks_skipped}, "
+        f"across {len(categories)} categories."
+    )
 
 async def run_temp_cleanup_job():
     """

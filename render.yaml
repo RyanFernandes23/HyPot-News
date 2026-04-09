@@ -1,46 +1,6 @@
 services:
-  # 1. The FastAPI Web Server
+  # The FastAPI Web Server (scheduler runs inside via lifespan)
   - type: web
     name: news-api
     runtime: docker
     plan: starter
-    envVars:
-      - key: REDIS_URL
-        fromService:
-          type: redis
-          name: news-cache
-          property: connectionString
-
-  # 2. The General Worker
-  - type: worker
-    name: news-general-worker
-    runtime: docker
-    # Changed from startCommand to dockerCommand
-    dockerCommand: uv run python -m src.worker
-    plan: starter
-    envVars:
-      - key: REDIS_URL
-        fromService:
-          type: redis
-          name: news-cache
-          property: connectionString
-
-  # 3. The Dramatiq Actor
-  - type: worker
-    name: news-dramatiq-actors
-    runtime: docker
-    # Changed from startCommand to dockerCommand
-    dockerCommand: uv run dramatiq src.actors
-    plan: starter
-    envVars:
-      - key: REDIS_URL
-        fromService:
-          type: redis
-          name: news-cache
-          property: connectionString
-
-  # 4. Redis Instance
-  - type: redis
-    name: news-cache
-    plan: free
-    ipAllowList: []
