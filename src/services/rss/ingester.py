@@ -6,6 +6,7 @@ from src.db.supabase import supabase_service
 
 logger = logging.getLogger(__name__)
 
+
 def build_external_id(entry: Dict[str, Any]) -> str:
     """
     Builds a unique external_id for deduplication.
@@ -15,21 +16,29 @@ def build_external_id(entry: Dict[str, Any]) -> str:
     url = entry.get("link", "") or entry.get("source_url", "") or entry.get("url", "")
     if url:
         return hashlib.sha256(url.encode("utf-8")).hexdigest()
-        
+
     title = entry.get("title", "") or entry.get("headline", "")
     source = entry.get("descriptor_source", "") or entry.get("source_name", "")
     fallback_string = f"{title}-{source}"
     return hashlib.sha256(fallback_string.encode("utf-8")).hexdigest()
 
+
 import re
+from html import unescape
+
 
 def extract_image_from_html(html_content: str) -> str:
     """Helper to extract the first img src from an HTML string."""
     if not html_content or not isinstance(html_content, str):
         return ""
     # Look for common image extensions in src
-    match = re.search(r'<img[^>]+src=["\']([^"\']+\.(?:jpg|jpeg|png|webp|gif|svg)[^"\']*)["\']', html_content, re.IGNORECASE)
+    match = re.search(
+        r'<img[^>]+src=["\']([^"\']+\.(?:jpg|jpeg|png|webp|gif|svg)[^"\']*)["\']',
+        html_content,
+        re.IGNORECASE,
+    )
     return match.group(1) if match else ""
+
 
 def map_entry_to_article(entry: Dict[str, Any]) -> Dict[str, Any]:
     """
@@ -38,19 +47,21 @@ def map_entry_to_article(entry: Dict[str, Any]) -> Dict[str, Any]:
     """
     # 1. Extract image URL with multiple fallbacks
     image_url = entry.get("url_to_image") or entry.get("imageUrl") or ""
-    
+
     # Fallback A: Media RSS standard tags
     if not image_url:
         if "media_thumbnail" in entry and entry["media_thumbnail"]:
             image_url = entry["media_thumbnail"][0].get("url", "")
         elif "media_content" in entry and entry["media_content"]:
             image_url = entry["media_content"][0].get("url", "")
-            
+
     # Fallback B: Feedparser enclosures
     if not image_url and "enclosures" in entry and entry["enclosures"]:
         for enc in entry["enclosures"]:
             url = enc.get("url", "")
-            if enc.get("type", "").startswith("image/") or url.lower().endswith(('.jpg', '.jpeg', '.png', '.webp', '.gif', '.svg')):
+            if enc.get("type", "").startswith("image/") or url.lower().endswith(
+                (".jpg", ".jpeg", ".png", ".webp", ".gif", ".svg")
+            ):
                 image_url = url
                 break
 
@@ -58,7 +69,9 @@ def map_entry_to_article(entry: Dict[str, Any]) -> Dict[str, Any]:
     if not image_url and "links" in entry and entry["links"]:
         for link in entry["links"]:
             href = link.get("href", "")
-            if link.get("type", "").startswith("image/") or href.lower().endswith(('.jpg', '.jpeg', '.png', '.webp', '.gif', '.svg')):
+            if link.get("type", "").startswith("image/") or href.lower().endswith(
+                (".jpg", ".jpeg", ".png", ".webp", ".gif", ".svg")
+            ):
                 image_url = href
                 break
 
@@ -67,15 +80,51 @@ def map_entry_to_article(entry: Dict[str, Any]) -> Dict[str, Any]:
         # Check summary and content
         content_blobs = [entry.get("summary", ""), entry.get("content", "")]
         if "content" in entry and isinstance(entry["content"], list):
-            content_blobs.extend([c.get("value", "") for c in entry["content"] if isinstance(c, dict)])
-        
+            content_blobs.extend(
+                [c.get("value", "") for c in entry["content"] if isinstance(c, dict)]
+            )
+        # Fallback: content:encoded (RSS Content module)
+        if "content_encoded" in entry:
+            content_blobs.append(entry["content_encoded"])
+
         for blob in content_blobs:
             if isinstance(blob, str) and blob:
                 found_url = extract_image_from_html(blob)
                 if found_url:
                     image_url = found_url
                     break
-            
+
+    # Fallback E: Source-specific image extraction (CNBC, TechCrunch, etc.)
+    if not image_url:
+        source = entry.get("descriptor_source") or entry.get("source_name", "")
+        # CNBC-specific: look for media:content with medium=image
+        if source == "CNBC":
+            if "media_content" in entry and entry["media_content"]:
+                for mc in entry["media_content"]:
+                    if mc.get("medium") == "image":
+                        image_url = mc.get("url", "")
+                        break
+        # TechCrunch-specific: often has images in specific format
+        elif source == "TechCrunch":
+            if "media_thumbnail" in entry and entry["media_thumbnail"]:
+                image_url = entry["media_thumbnail"][0].get("url", "")
+
+    # Fallback F: Aggressive search for any image URL in raw entry
+    if not image_url:
+        for key, value in entry.items():
+            if isinstance(value, str) and value.startswith("http"):
+                if any(
+                    value.lower().endswith(ext)
+                    for ext in (".jpg", ".jpeg", ".png", ".webp", ".gif")
+                ):
+                    if (
+                        "logo" not in value.lower()
+                        and "icon" not in value.lower()
+                        and "avatar" not in value.lower()
+                    ):
+                        image_url = value
+                        break
+
     # 2. Extract source name
     source_name = entry.get("descriptor_source") or entry.get("source_name")
     if not source_name:
@@ -90,31 +139,50 @@ def map_entry_to_article(entry: Dict[str, Any]) -> Dict[str, Any]:
     headline = entry.get("title") or entry.get("headline") or "No Title"
 
     # 4. Extract category
-    category = entry.get("descriptor_category") or entry.get("category") or "Uncategorized"
+    category = (
+        entry.get("descriptor_category") or entry.get("category") or "Uncategorized"
+    )
 
     # 5. Extract source URL
-    source_url = entry.get("link") or entry.get("source_url") or entry.get("url") or None
+    source_url = (
+        entry.get("link") or entry.get("source_url") or entry.get("url") or None
+    )
 
     # 6. Extract summary/content
     summary = entry.get("summary") or entry.get("summarized_content") or ""
+    # Clean HTML tags from summary
+    if summary and isinstance(summary, str):
+        # Remove all HTML tags including <p>, <a>, <br>, etc.
+        summary = re.sub(r"<[^>]*>", "", summary)
+        # Remove HTML entities like &nbsp; &amp; etc.
+        summary = re.sub(r"&[a-zA-Z]+;", " ", summary)
+        # Unescape remaining HTML entities
+        summary = unescape(summary)
+        # Normalize whitespace
+        summary = re.sub(r"\s+", " ", summary).strip()
 
     # 7. Extract published date
     import time
     from datetime import datetime
+
     published_at = entry.get("published_at") or entry.get("published")
-    
+
     # If it's a feedparser-style parsed tuple, convert to ISO
     if "published_parsed" in entry and entry["published_parsed"]:
         try:
-            published_at = time.strftime('%Y-%m-%dT%H:%M:%SZ', entry["published_parsed"])
+            published_at = time.strftime(
+                "%Y-%m-%dT%H:%M:%SZ", entry["published_parsed"]
+            )
         except:
             published_at = None
-    
+
     # Final check: Ensure we don't send empty strings to timestamp/URL columns
     # Supabase (Postgres) expects valid timestamp or NULL, not ""
-    if not published_at or (isinstance(published_at, str) and published_at.strip() == ""):
+    if not published_at or (
+        isinstance(published_at, str) and published_at.strip() == ""
+    ):
         published_at = None
-    
+
     return {
         "external_id": build_external_id(entry),
         "source_name": source_name,
@@ -137,7 +205,7 @@ def ingest_articles(entries: List[Dict[str, Any]]) -> int:
     """
     if not entries:
         return 0
-        
+
     unique_articles = {}
     categories_to_prune = set()
     for entry in entries:
@@ -147,22 +215,23 @@ def ingest_articles(entries: List[Dict[str, Any]]) -> int:
             categories_to_prune.add(article["category"])
         except Exception as e:
             logger.error(f"Error mapping article {entry.get('title')}: {e}")
-            
+
     articles_data = list(unique_articles.values())
-            
+
     if not articles_data:
         return 0
-        
+
     try:
         # Upsert into Supabase.
         # response.data will contain the rows after upsert (including generated IDs)
-        response = supabase_service.table("news_articles").upsert(
-            articles_data, 
-            on_conflict="external_id"
-        ).execute()
-        
+        response = (
+            supabase_service.table("news_articles")
+            .upsert(articles_data, on_conflict="external_id")
+            .execute()
+        )
+
         return len(response.data)
-        
+
     except Exception as e:
         logger.error(f"Batch upsert failed: {e}")
         return 0
