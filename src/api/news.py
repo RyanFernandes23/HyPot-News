@@ -33,32 +33,25 @@ async def get_news_by_category(
     try:
         user_id = getattr(user, "id", None) or user.get("id")
         
-        # 1. Fetch read articles for filtering
-        read_response = supabase_service.table("read_articles") \
-            .select("external_id") \
-            .eq("user_id", user_id) \
-            .execute()
-        read_ids = [row["external_id"] for row in read_response.data] if read_response.data else []
-        
-        # 2. Query DB with recency (48h) and category
+        # Query DB using RPC to handle category filtering and read-article exclusion
         from datetime import timedelta
         recency_threshold = (datetime.utcnow() - timedelta(hours=48)).isoformat()
         
-        query = supabase_service.table("news_articles") \
-            .select("*") \
-            .eq("category", category) \
-            .gt("published_at", recency_threshold) \
-            .order("published_at", desc=True)
-            
-        if read_ids:
-            query = query.not_.in_("external_id", read_ids[:500])
-            
-        response = query.limit(limit).execute()
+        response = supabase_service.rpc(
+            "get_filtered_news",
+            {
+                "p_user_id": user_id,
+                "p_categories": [category],
+                "p_recency_threshold": recency_threshold,
+                "p_limit": limit
+            }
+        ).execute()
+
         articles = [_clean_article(art) for art in response.data] if response.data else []
         
         return {"category": category, "limit": limit, "count": len(articles), "articles": articles}
     except Exception as e:
-        logger.error(f"Error fetching news for category '{category}': {e}")
+        logger.error(f"Error fetching news for category '{category}': {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail="Internal server error while fetching news")
 
 @router.get("/news/search", response_model=None)
@@ -127,16 +120,19 @@ async def get_daily_briefing(
             else:
                 final_interests = ["International"]
 
-        # Daily briefing requires playable audio, so only return fully processed entries.
+        # Daily briefing requires playable audio and variety across categories.
+        # We use a dedicated RPC to balance categories and filter out read articles.
         user_id = getattr(user, "id", None) or user.get("id")
         
-        response = supabase_service.table("news_articles") \
-            .select("*") \
-            .in_("category", final_interests) \
-            .eq("audio_status", "ready") \
-            .order("published_at", desc=True) \
-            .range(offset, offset + limit - 1) \
-            .execute()
+        response = supabase_service.rpc(
+            "get_unread_briefing",
+            {
+                "p_user_id": user_id,
+                "p_categories": final_interests,
+                "p_limit": limit,
+                "p_offset": offset
+            }
+        ).execute()
              
         articles = response.data if response.data else []
             
@@ -148,7 +144,7 @@ async def get_daily_briefing(
             "articles": [_clean_article(art) for art in articles]
         }
     except Exception as e:
-        logger.error(f"Error fetching briefing from DB: {e}")
+        logger.error(f"Error fetching briefing from DB: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail="Internal server error while fetching briefing")
 
 @router.get("/news/live", response_model=None)
@@ -165,14 +161,7 @@ async def get_live_news(
     try:
         user_id = getattr(user, "id", None) or user.get("id")
         
-        # 1. Fetch read articles for filtering
-        read_response = supabase_service.table("read_articles") \
-            .select("external_id") \
-            .eq("user_id", user_id) \
-            .execute()
-        read_ids = [row["external_id"] for row in read_response.data] if read_response.data else []
-
-        # 2. Determine Categories
+        # 1. Determine Categories
         categories = [category]
         if category.lower() == "for you":
             user_data = supabase_service.table("users") \
@@ -180,28 +169,32 @@ async def get_live_news(
                 .eq("id", user_id) \
                 .single() \
                 .execute()
-            categories = user_data.data.get("interests") if user_data.data else ["International"]
+            
+            categories = user_data.data.get("interests") if user_data.data else []
+            
+            # Default to International if no interests found
+            if not categories:
+                categories = ["International"]
+            elif isinstance(categories, str):
+                categories = [categories]
 
-        # 3. Build Query
+        # 2. Query DB using RPC to handle category filtering and read-article exclusion
         from datetime import timedelta
         recency_threshold = (datetime.utcnow() - timedelta(hours=48)).isoformat()
         
-        query = supabase_service.table("news_articles") \
-            .select("*") \
-            .in_("category", categories) \
-            .gt("published_at", recency_threshold) \
-            .order("published_at", desc=True)
-            
+        rpc_params = {
+            "p_user_id": user_id,
+            "p_categories": categories,
+            "p_recency_threshold": recency_threshold,
+            "p_limit": limit
+        }
         if before:
-            query = query.lt("published_at", before)
+            rpc_params["p_before"] = before
             
-        if read_ids:
-            query = query.not_.in_("external_id", read_ids[:500])
-            
-        response = query.limit(limit).execute()
+        response = supabase_service.rpc("get_filtered_news", rpc_params).execute()
         articles = [_clean_article(art) for art in response.data] if response.data else []
 
-        # 4. next_cursor
+        # 3. next_cursor
         next_cursor = None
         if articles:
             next_cursor = articles[-1].get("published_at")
@@ -215,8 +208,12 @@ async def get_live_news(
             "articles": articles
         }
     except Exception as e:
-        logger.error(f"Error fetching DB-backed live news: {e}")
-        raise HTTPException(status_code=500, detail="Internal server error while fetching news")
+        logger.error(f"Error fetching DB-backed live news: {str(e)}", exc_info=True)
+        # Check for PostgREST error patterns (400 Bad Request)
+        error_detail = "Internal server error while fetching news"
+        if "Bad Request" in str(e) or "400" in str(e):
+            error_detail = f"Database query failed: {str(e)}"
+        raise HTTPException(status_code=500, detail=error_detail)
 
 @router.post("/news/read", response_model=None)
 async def mark_as_read(

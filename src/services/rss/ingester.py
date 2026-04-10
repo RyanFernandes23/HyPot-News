@@ -21,18 +21,60 @@ def build_external_id(entry: Dict[str, Any]) -> str:
     fallback_string = f"{title}-{source}"
     return hashlib.sha256(fallback_string.encode("utf-8")).hexdigest()
 
+import re
+
+def extract_image_from_html(html_content: str) -> str:
+    """Helper to extract the first img src from an HTML string."""
+    if not html_content or not isinstance(html_content, str):
+        return ""
+    # Look for common image extensions in src
+    match = re.search(r'<img[^>]+src=["\']([^"\']+\.(?:jpg|jpeg|png|webp|gif|svg)[^"\']*)["\']', html_content, re.IGNORECASE)
+    return match.group(1) if match else ""
+
 def map_entry_to_article(entry: Dict[str, Any]) -> Dict[str, Any]:
     """
     Maps a raw feedparser entry dict or Flutter article payload to the DB schema.
     Ensures that empty strings are replaced with None for timestamp/URL fields to prevent DB errors.
     """
-    # 1. Extract image URL
+    # 1. Extract image URL with multiple fallbacks
     image_url = entry.get("url_to_image") or entry.get("imageUrl") or ""
+    
+    # Fallback A: Media RSS standard tags
     if not image_url:
         if "media_thumbnail" in entry and entry["media_thumbnail"]:
             image_url = entry["media_thumbnail"][0].get("url", "")
         elif "media_content" in entry and entry["media_content"]:
             image_url = entry["media_content"][0].get("url", "")
+            
+    # Fallback B: Feedparser enclosures
+    if not image_url and "enclosures" in entry and entry["enclosures"]:
+        for enc in entry["enclosures"]:
+            url = enc.get("url", "")
+            if enc.get("type", "").startswith("image/") or url.lower().endswith(('.jpg', '.jpeg', '.png', '.webp', '.gif', '.svg')):
+                image_url = url
+                break
+
+    # Fallback C: Feedparser links
+    if not image_url and "links" in entry and entry["links"]:
+        for link in entry["links"]:
+            href = link.get("href", "")
+            if link.get("type", "").startswith("image/") or href.lower().endswith(('.jpg', '.jpeg', '.png', '.webp', '.gif', '.svg')):
+                image_url = href
+                break
+
+    # Fallback D: HTML content/summary (Search for <img> tags)
+    if not image_url:
+        # Check summary and content
+        content_blobs = [entry.get("summary", ""), entry.get("content", "")]
+        if "content" in entry and isinstance(entry["content"], list):
+            content_blobs.extend([c.get("value", "") for c in entry["content"] if isinstance(c, dict)])
+        
+        for blob in content_blobs:
+            if isinstance(blob, str) and blob:
+                found_url = extract_image_from_html(blob)
+                if found_url:
+                    image_url = found_url
+                    break
             
     # 2. Extract source name
     source_name = entry.get("descriptor_source") or entry.get("source_name")
