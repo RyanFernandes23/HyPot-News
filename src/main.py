@@ -17,9 +17,11 @@ from src.api.admin import router as admin_router
 from src.core.config import settings
 from src.core.scheduler import scheduler
 from src.jobs.news_fetch import run_news_fetch_job
+from src.jobs.daily_briefing import run_daily_briefing_job
 from src.jobs.audio_jobs import run_briefing_audio_prep, run_temp_cleanup_job
 
 logger = logging.getLogger(__name__)
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -44,6 +46,15 @@ async def lifespan(app: FastAPI):
     )
 
     scheduler.add_job(
+        run_daily_briefing_job,
+        trigger="cron",
+        hour=3,
+        minute=0,
+        id="daily_briefing_fetch",
+        replace_existing=True,
+    )
+
+    scheduler.add_job(
         run_briefing_audio_prep,
         trigger="cron",
         hour=settings.BRIEFING_SCHEDULE_HOUR,
@@ -53,13 +64,16 @@ async def lifespan(app: FastAPI):
     )
 
     scheduler.start()
-    logger.info(f"Scheduler started — RSS every {settings.RSS_FETCH_INTERVAL_MINUTES}min, Briefing prep at {settings.BRIEFING_SCHEDULE_HOUR}:{settings.BRIEFING_SCHEDULE_MINUTE.zfill(2)} UTC")
+    logger.info(
+        f"Scheduler started — RSS every {settings.RSS_FETCH_INTERVAL_MINUTES}min, Briefing prep at {settings.BRIEFING_SCHEDULE_HOUR}:{settings.BRIEFING_SCHEDULE_MINUTE.zfill(2)} UTC"
+    )
 
     yield
 
     logger.info("FastAPI service shutting down...")
     if scheduler.running:
         scheduler.shutdown(wait=False)
+
 
 app = FastAPI(title="HyPot-News API", lifespan=lifespan)
 
@@ -76,12 +90,14 @@ if not os.path.exists(static_dir):
 
 app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
+
 @app.get("/")
 async def root():
     index_path = os.path.join(static_dir, "index.html")
     if os.path.exists(index_path):
         return FileResponse(index_path)
     return {"message": "Welcome to HyPot-News API (index.html not found)"}
+
 
 @app.get("/health")
 async def health_check():

@@ -32,11 +32,6 @@ RSS_FEEDS = [
         "category": "Finance",
     },
     {
-        "url": "https://www.ft.com/rss/home",
-        "source": "Financial Times",
-        "category": "Finance",
-    },
-    {
         "url": "https://www.nasdaq.com/feed/nasdaq-originals/rss.xml",
         "source": "Nasdaq",
         "category": "Finance",
@@ -81,11 +76,6 @@ RSS_FEEDS = [
     {
         "url": "https://www.aljazeera.com/xml/rss/all.xml",
         "source": "Al Jazeera",
-        "category": "International",
-    },
-    {
-        "url": "https://www.ft.com/world?format=rss",
-        "source": "Financial Times",
         "category": "International",
     },
     {
